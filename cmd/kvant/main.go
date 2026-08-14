@@ -38,6 +38,9 @@ func main() {
 func run(args []string) error {
 	commands := []command{
 		{"corpus", "corpus validate [--corpus DIR]", "check a corpus checkout", runCorpus},
+		{"issues", "issues sync|list [--deep]", "build and print the issue list", runIssues},
+		{"people", "people sync", "build the contributor list", runPeople},
+		{"sources", "sources probe", "report what each source holds per year", runSources},
 		{"version", "version", "print the version", runVersion},
 	}
 	if len(args) == 0 || args[0] == "help" || args[0] == "-h" || args[0] == "--help" {
