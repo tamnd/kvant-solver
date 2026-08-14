@@ -310,18 +310,23 @@ func (q *Queue) ids(stage Stage, state State) ([]string, error) {
 
 // Lease claims the next pending job for a host, out of one group.
 //
-// The claim is the rename itself. Two workers that pick the same job both call
-// rename, the loser gets ENOENT because the file is already gone, and it moves
-// on to the next one. That is the whole mutual exclusion, and it works between
-// processes and between machines sharing a directory, which a mutex in this
-// program would not.
+// The claim is the creation of the leased file, and it is exclusive: the file
+// is written under a temporary name and then linked into place, and a link onto
+// a name that exists fails with EEXIST and fails that way for exactly one of any
+// number of workers racing for it. The loser takes the next job. That is the
+// whole mutual exclusion, and it works between processes and between machines
+// sharing a directory, which a mutex in this program would not.
 //
-// The rename comes before the read, and that ordering is not stylistic. Reading
-// first and renaming after works on Unix and does not work on Windows, where an
-// open handle on a file blocks a rename of it: two workers reading the same
-// pending file at once both fail to move it, and on a bad interleaving the same
-// job goes out twice. Claiming first means the only thing that decides is the
-// rename, and the read happens on a file this worker already owns.
+// This used to be a rename out of pending, which is the obvious way to do it and
+// is wrong on Windows. Under eight workers and forty jobs, renames of the same
+// source that should have left one winner left several, and the same page went
+// out as many as five times. A link is the one operation both platforms make
+// atomic against a name that already exists, so it is what decides here.
+//
+// The pending file is removed after the claim rather than moved by it, so a
+// worker that dies in between leaves the job in both places. That is the safe
+// side to fail on: the leased file is what every other worker tests against, so
+// nobody else takes the job, and its lease expires and Reap puts it back.
 //
 // The group is the part of the target before the slash, which for OCR is the
 // book. It is a parameter and not an option because a caller that leases across
@@ -336,35 +341,40 @@ func (q *Queue) Lease(stage Stage, host, group string, expected time.Duration) (
 		return Job{}, err
 	}
 	for _, id := range ids {
-		from, to := q.path(stage, Pending, id), q.path(stage, Leased, id)
-		if err := renameFile(from, to); err != nil {
-			// Any failure here means somebody else is having this one. It is
-			// ENOENT when they finished the rename first and a sharing violation
-			// when they are partway through it, and neither is this worker's
-			// problem, so both mean the same thing: take the next job.
-			continue
-		}
-		job, err := q.read(Leased, stage, id)
+		job, err := q.read(Pending, stage, id)
 		if err != nil {
 			if os.IsNotExist(err) {
-				continue
+				continue // somebody else took it between the listing and here
 			}
 			return Job{}, err
 		}
 		if group != "" && GroupOf(job.Target) != group {
-			// Wrong book, so put it back for the worker whose book it is. A
-			// failure to put it back would strand the job in leased with no
-			// lease on it, and Reap treats that as expired and returns it to
-			// pending, so the job is never lost either way.
-			if err := renameFile(to, from); err != nil {
-				return Job{}, err
-			}
 			continue
 		}
 		job.Attempts++
 		job.Lease = &Lease{Host: host, Until: q.now().Add(expected + LeaseSlack), PID: os.Getpid()}
-		if err := q.write(Leased, job); err != nil {
+		won, err := q.create(Leased, job)
+		if err != nil {
 			return Job{}, err
+		}
+		if !won {
+			continue // another worker got there first
+		}
+		// Taking the pending file away is the second half of the claim and not
+		// bookkeeping. Winning the link is not enough on its own: a worker
+		// holding a read from a moment ago can win it after the worker that
+		// really had the job has finished and taken its leased file away, and
+		// then the same page goes out twice. Exactly one caller can remove a
+		// given file, so an ENOENT here says somebody else had it and this
+		// worker gives the claim back.
+		if err := removeFile(q.path(stage, Pending, id)); err != nil {
+			if !os.IsNotExist(err) {
+				return Job{}, err
+			}
+			if err := removeFile(q.path(stage, Leased, id)); err != nil && !os.IsNotExist(err) {
+				return Job{}, err
+			}
+			continue
 		}
 		return job, nil
 	}
