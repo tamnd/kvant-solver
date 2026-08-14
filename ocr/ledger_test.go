@@ -106,7 +106,7 @@ func TestAMissingLedgerIsNotAnError(t *testing.T) {
 type metered struct{ *engine }
 
 func (m metered) ReadMetered(ctx context.Context, image string) (string, api.Usage, error) {
-	text, err := m.engine.Read(ctx, image)
+	text, err := m.Read(ctx, image)
 	return text, api.Usage{InputTokens: 1000, OutputTokens: 500, TotalTokens: 1500}, err
 }
 
