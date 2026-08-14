@@ -1,0 +1,8 @@
+# The vendored KaTeX files have their SHA-256 written down in katex/SHA256SUMS
+# and checked by a test. Git rewriting line endings on a Windows checkout
+# changes those bytes and the test fails on a file nobody touched, so these are
+# handed over exactly as they are stored.
+katex/katex.min.js -text
+katex/assets/katex.min.css -text
+katex/assets/fonts/* binary
+katex/SHA256SUMS -text

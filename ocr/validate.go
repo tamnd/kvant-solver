@@ -35,6 +35,7 @@ const MaxIllegible = 4
 // in the failures report, and the retry policy reads it.
 type Rule string
 
+// The eight rules, in the order Validate runs them.
 const (
 	RuleShort     Rule = "short"     // 1, empty or under MinChars
 	RuleMath      Rule = "math"      // 2, unbalanced $ or $$

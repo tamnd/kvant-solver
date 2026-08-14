@@ -36,6 +36,7 @@ import (
 // of the time and a lost contents row occasionally.
 type Level string
 
+// Fail stops an issue being signed off. Warn is a thing to look at.
 const (
 	Fail Level = "fail"
 	Warn Level = "warn"

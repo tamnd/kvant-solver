@@ -30,7 +30,7 @@ func TestOneSectionHoweverItIsPrinted(t *testing.T) {
 // A banner broken across a line carries a soft hyphen, which is invisible in a
 // diff and would otherwise split one section into two.
 func TestABannerBrokenAcrossALine(t *testing.T) {
-	got := rubric.Canonical("Практикум абиту­риента")
+	got := rubric.Canonical("Практикум абиту\u00adриента")
 	if got.Slug != "praktikum-abiturienta" {
 		t.Fatalf("resolved to %q, want praktikum-abiturienta", got.Slug)
 	}

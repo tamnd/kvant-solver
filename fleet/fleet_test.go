@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -230,7 +231,9 @@ func TestStateRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if mode := info.Mode().Perm(); mode != 0o600 {
+	// Windows has no Unix permission bits and Go reports 666 for any file that
+	// is not read only, so there is nothing to assert there.
+	if mode := info.Mode().Perm(); mode != 0o600 && runtime.GOOS != "windows" {
 		t.Errorf("mode = %o, want 600", mode)
 	}
 

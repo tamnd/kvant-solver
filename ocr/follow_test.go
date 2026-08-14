@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -251,7 +250,8 @@ func TestTheScratchDirectoryIsUnderTheHostRoot(t *testing.T) {
 	if _, err := ask(machine).Ask(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	want := filepath.Join(RemoteRoot, "ask", "kvant-1975-1-0050-ask-abc123")
+	// A remote path, so a slash whatever this machine uses.
+	want := RemoteRoot + "/ask/kvant-1975-1-0050-ask-abc123"
 	if !strings.Contains(machine.commands[0], want) {
 		t.Errorf("the scratch directory is not %s:\n%s", want, machine.commands[0])
 	}

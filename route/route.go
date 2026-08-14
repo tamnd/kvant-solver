@@ -69,12 +69,16 @@ const WireChat = "chat"
 // than as a nanosecond count nobody can read.
 type Duration time.Duration
 
+// Duration is the ordinary time.Duration inside.
 func (d Duration) Duration() time.Duration { return time.Duration(d) }
 
+// MarshalJSON writes the duration the way a person writes one.
 func (d Duration) MarshalJSON() ([]byte, error) {
 	return json.Marshal(time.Duration(d).String())
 }
 
+// UnmarshalJSON reads either the string form or a bare number of nanoseconds,
+// since a hand edited route file may hold whichever the person reached for.
 func (d *Duration) UnmarshalJSON(raw []byte) error {
 	var text string
 	if err := json.Unmarshal(raw, &text); err == nil {
@@ -193,6 +197,8 @@ func (r Registry) Write(path string) error {
 	return os.WriteFile(path, append(raw, '\n'), 0o644)
 }
 
+// Validate says whether a route file makes sense, before anything tries to send
+// a page through it.
 func (r Registry) Validate() error {
 	if len(r.Routes) == 0 {
 		return fmt.Errorf("route file lists no routes")

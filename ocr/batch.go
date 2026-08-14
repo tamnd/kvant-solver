@@ -201,6 +201,7 @@ type Duration time.Duration
 
 func (d Duration) String() string { return time.Duration(d).Round(time.Second).String() }
 
+// MarshalJSON writes the duration as the string String prints.
 func (d Duration) MarshalJSON() ([]byte, error) {
 	return []byte(strconv.Quote(d.String())), nil
 }
@@ -483,7 +484,7 @@ func (b Batch) pushPrompt(ctx context.Context, root string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer os.RemoveAll(scratch)
+	defer func() { _ = os.RemoveAll(scratch) }()
 	local := filepath.Join(scratch, name)
 	if err := os.WriteFile(local, []byte(b.Prompt), 0o644); err != nil {
 		return "", err

@@ -21,6 +21,7 @@ import (
 // an edit to the route file, and a dead tunnel is fleet up.
 type State string
 
+// The states a probe can report.
 const (
 	StateLive         State = "live"
 	StateQuota        State = "quota"

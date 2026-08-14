@@ -84,8 +84,10 @@ func (f *Folioer) Read(ctx context.Context, image string) (int, bool, error) {
 	if err != nil {
 		return 0, false, err
 	}
-	crop.Close()
-	defer os.Remove(crop.Name())
+	if err := crop.Close(); err != nil {
+		return 0, false, err
+	}
+	defer func() { _ = os.Remove(crop.Name()) }()
 
 	if err := CropFoot(image, crop.Name(), f.band()); err != nil {
 		return 0, false, err
@@ -116,7 +118,7 @@ func CropFoot(from, to string, band float64) error {
 	if err != nil {
 		return err
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 	full, err := jpeg.Decode(file)
 	if err != nil {
 		return fmt.Errorf("%s: %w", from, err)
@@ -133,7 +135,10 @@ func CropFoot(from, to string, band float64) error {
 	if err != nil {
 		return err
 	}
-	defer out.Close()
+	// Closed here as well as below, because the return value of the close is
+	// the last chance to see a short write and the defer is only for the paths
+	// that leave early.
+	defer func() { _ = out.Close() }()
 	if err := jpeg.Encode(out, sub.SubImage(FootBand(full, band)), &jpeg.Options{Quality: 95}); err != nil {
 		return err
 	}

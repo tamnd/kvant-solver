@@ -25,6 +25,8 @@ var letters = map[rune]string{
 	'ъ': "", 'ы': "y", 'ь': "", 'э': "e", 'ю': "yu", 'я': "ya",
 }
 
+// Slug is the file name form of a printed rubric banner: transliterated to
+// Latin, lower case, with everything else turned into a single dash.
 func Slug(printed string) string {
 	var out strings.Builder
 	dash := false

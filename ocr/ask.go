@@ -196,7 +196,7 @@ func (a Ask) push(ctx context.Context, dir string) error {
 	if err != nil {
 		return err
 	}
-	defer os.RemoveAll(scratch)
+	defer func() { _ = os.RemoveAll(scratch) }()
 	local := filepath.Join(scratch, "ask.md")
 	if err := os.WriteFile(local, []byte(a.Prompt), 0o600); err != nil {
 		return err

@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -237,7 +236,9 @@ func TestTheScratchDirectoryIsItsOwn(t *testing.T) {
 	if _, err := newChat(machine).Do(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	want := filepath.Join(RemoteRoot, "chat", "glossary-vi-0001")
+	// Joined with a slash and not with filepath.Join, because this is a path
+	// on the remote box and not on the machine running the test.
+	want := RemoteRoot + "/chat/glossary-vi-0001"
 	if !strings.Contains(machine.commands[0], want) {
 		t.Errorf("the scratch directory is not %s:\n%s", want, machine.commands[0])
 	}

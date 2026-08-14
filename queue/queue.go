@@ -43,6 +43,8 @@ import (
 // queue does not touch translation.
 type Stage string
 
+// The stages, in pipeline order. Repair is the second read of a page the
+// first read could not manage.
 const (
 	StageOCR       Stage = "ocr"
 	StageRepair    Stage = "repair"
@@ -57,6 +59,8 @@ var Stages = []Stage{StageOCR, StageRepair, StageTranslate, StageSolve, StageJud
 // State is where a job is. These are directory names.
 type State string
 
+// The states a job can be in. Failed is a job with attempts left; dead is one
+// that has run out of them.
 const (
 	Pending State = "pending"
 	Leased  State = "leased"
@@ -222,12 +226,12 @@ func (q *Queue) temp(state State, job Job) (string, error) {
 	}
 	name := file.Name()
 	if _, err := file.Write(append(raw, '\n')); err != nil {
-		file.Close()
-		os.Remove(name)
+		_ = file.Close()
+		_ = os.Remove(name)
 		return "", err
 	}
 	if err := file.Close(); err != nil {
-		os.Remove(name)
+		_ = os.Remove(name)
 		return "", err
 	}
 	return name, os.Chmod(name, 0o644)
@@ -241,7 +245,7 @@ func (q *Queue) write(state State, job Job) error {
 		return err
 	}
 	if err := os.Rename(name, q.path(job.Stage, state, job.ID)); err != nil {
-		os.Remove(name)
+		_ = os.Remove(name)
 		return err
 	}
 	return nil
@@ -258,7 +262,7 @@ func (q *Queue) create(state State, job Job) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	defer os.Remove(name)
+	defer func() { _ = os.Remove(name) }()
 	err = os.Link(name, q.path(job.Stage, state, job.ID))
 	if errors.Is(err, os.ErrExist) {
 		return false, nil
@@ -312,6 +316,13 @@ func (q *Queue) ids(stage Stage, state State) ([]string, error) {
 // processes and between machines sharing a directory, which a mutex in this
 // program would not.
 //
+// The rename comes before the read, and that ordering is not stylistic. Reading
+// first and renaming after works on Unix and does not work on Windows, where an
+// open handle on a file blocks a rename of it: two workers reading the same
+// pending file at once both fail to move it, and on a bad interleaving the same
+// job goes out twice. Claiming first means the only thing that decides is the
+// rename, and the read happens on a file this worker already owns.
+//
 // The group is the part of the target before the slash, which for OCR is the
 // book. It is a parameter and not an option because a caller that leases across
 // books is a caller that has already gone wrong: an OCR run knows the page
@@ -325,22 +336,30 @@ func (q *Queue) Lease(stage Stage, host, group string, expected time.Duration) (
 		return Job{}, err
 	}
 	for _, id := range ids {
-		job, err := q.read(Pending, stage, id)
-		if err != nil {
-			if os.IsNotExist(err) {
-				continue // somebody else took it between the listing and here
-			}
-			return Job{}, err
-		}
-		if group != "" && GroupOf(job.Target) != group {
-			continue
-		}
 		from, to := q.path(stage, Pending, id), q.path(stage, Leased, id)
 		if err := os.Rename(from, to); err != nil {
+			// Any failure here means somebody else is having this one. It is
+			// ENOENT when they finished the rename first and a sharing violation
+			// when they are partway through it, and neither is this worker's
+			// problem, so both mean the same thing: take the next job.
+			continue
+		}
+		job, err := q.read(Leased, stage, id)
+		if err != nil {
 			if os.IsNotExist(err) {
 				continue
 			}
 			return Job{}, err
+		}
+		if group != "" && GroupOf(job.Target) != group {
+			// Wrong book, so put it back for the worker whose book it is. A
+			// failure to put it back would strand the job in leased with no
+			// lease on it, and Reap treats that as expired and returns it to
+			// pending, so the job is never lost either way.
+			if err := os.Rename(to, from); err != nil {
+				return Job{}, err
+			}
+			continue
 		}
 		job.Attempts++
 		job.Lease = &Lease{Host: host, Until: q.now().Add(expected + LeaseSlack), PID: os.Getpid()}
@@ -377,7 +396,7 @@ func (q *Queue) Finish(job Job, ok bool, reason string) (State, error) {
 	job.Lease = nil
 	job.History = append(job.History, Event{TS: q.now(), Host: host, OK: ok, Reason: reason})
 
-	state := Done
+	var state State
 	switch {
 	case ok:
 		state = Done

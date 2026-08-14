@@ -57,6 +57,8 @@ type Command struct {
 	Timeout time.Duration
 }
 
+// Name is the model name for the report, or the program name when the caller
+// did not give one.
 func (c Command) Name() string {
 	if c.Model != "" {
 		return c.Model

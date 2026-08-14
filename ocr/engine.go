@@ -91,6 +91,7 @@ func (s Served) temperature() *float64 {
 	return &zero
 }
 
+// Name is the model this engine is holding.
 func (s Served) Name() string { return s.Model }
 
 func (s Served) Read(ctx context.Context, image string) (string, error) {

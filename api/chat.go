@@ -101,6 +101,7 @@ type chatChunk struct {
 	} `json:"error"`
 }
 
+// Complete sends one chat completion and returns what came back.
 func (c *Client) Complete(ctx context.Context, request Request) (Response, error) {
 	if strings.TrimSpace(c.URL) == "" {
 		return Response{}, errors.New("chat completions URL is empty")
