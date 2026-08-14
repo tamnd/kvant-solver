@@ -42,6 +42,20 @@ type Engine interface {
 	Name() string
 }
 
+// Metered is an engine that also says what the page cost in tokens.
+//
+// It is a second interface rather than a wider Engine because half the lanes
+// cannot answer the question. An endpoint returns a usage block; a program on
+// the box prints a page of Markdown and exits, and there is nothing to read the
+// number off. Folding it into Engine would mean every local lane returning a
+// zero that the report cannot tell from a page that really used no tokens, so
+// the runner asks with a type assertion and a lane that stays quiet is recorded
+// as having said nothing.
+type Metered interface {
+	Engine
+	ReadMetered(ctx context.Context, image string) (string, api.Usage, error)
+}
+
 // Served is an engine backed by anything that answers POST
 // /v1/chat/completions with an image in the message.
 //
@@ -95,12 +109,20 @@ func (s Served) temperature() *float64 {
 func (s Served) Name() string { return s.Model }
 
 func (s Served) Read(ctx context.Context, image string) (string, error) {
+	text, _, err := s.ReadMetered(ctx, image)
+	return text, err
+}
+
+// ReadMetered is Read with the token accounting the server sent back. A server
+// that sends none leaves it zero, which the ledger records as a page nobody
+// counted rather than a page that was free.
+func (s Served) ReadMetered(ctx context.Context, image string) (string, api.Usage, error) {
 	if s.Client == nil {
-		return "", fmt.Errorf("no client")
+		return "", api.Usage{}, fmt.Errorf("no client")
 	}
 	url, err := DataURL(image)
 	if err != nil {
-		return "", err
+		return "", api.Usage{}, err
 	}
 	timeout := s.Timeout
 	if timeout <= 0 {
@@ -116,9 +138,9 @@ func (s Served) Read(ctx context.Context, image string) (string, error) {
 		Temperature:  s.temperature(),
 	})
 	if err != nil {
-		return "", fmt.Errorf("read %s: %w", filepath.Base(image), err)
+		return "", api.Usage{}, fmt.Errorf("read %s: %w", filepath.Base(image), err)
 	}
-	return response.Text, nil
+	return response.Text, response.Usage.Normalized(), nil
 }
 
 // DataURL reads a page image and encodes it for the wire.

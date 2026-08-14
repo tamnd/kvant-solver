@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/tamnd/kvant-solver/answerguard"
+	"github.com/tamnd/kvant-solver/api"
 	"github.com/tamnd/kvant-solver/corpus"
 	"github.com/tamnd/kvant-solver/queue"
 )
@@ -66,6 +67,9 @@ type Runner struct {
 
 	// Options carries the opt-in rules, which is the KaTeX checker.
 	Options Options
+	// Ledger records what each attempt cost. Nil for a run nobody is accounting
+	// for, and the runner does not care which.
+	Ledger *Ledger
 	// Workers is how many pages are in flight at once. One by default: the
 	// browser lane is one session per host and asking it for two is how an
 	// account gets banned. A served model on a local card wants six or more, and
@@ -215,6 +219,73 @@ func (r *Runner) Run(ctx context.Context) (Summary, error) {
 // counting it against the three attempts would kill a page over a mount that
 // came back a minute later.
 func (r *Runner) one(ctx context.Context, job queue.Job) (queue.State, []Problem, error) {
+	var spent meter
+	state, problems, err := r.attempt(ctx, job, &spent)
+	r.record(job, spent, problems, err)
+	return state, problems, err
+}
+
+// meter is what one attempt spent. It is filled in by the read and emptied into
+// the ledger once the attempt has been judged, because whether a page was worth
+// the tokens is not known until the rules have run.
+type meter struct {
+	// read says the engine was actually asked. A job that never got that far
+	// spent nothing and does not belong in a cost report.
+	read    bool
+	seconds float64
+	usage   api.Usage
+}
+
+// record writes the ledger line for one attempt.
+//
+// A failure to write it is logged and swallowed. The ledger is accounting and
+// the corpus is the work, and losing a line of the former is not a reason to
+// stop reading pages.
+func (r *Runner) record(job queue.Job, spent meter, problems []Problem, err error) {
+	if r.Ledger == nil || !spent.read {
+		return
+	}
+	entry := Entry{
+		TS:      r.now().UTC(),
+		Target:  job.Target,
+		Issue:   r.Issue.String(),
+		Year:    r.Issue.Year,
+		Engine:  r.Engine.Name(),
+		Host:    r.host(),
+		Seconds: spent.seconds,
+		Usage:   spent.usage,
+		OK:      err == nil && len(problems) == 0,
+	}
+	switch {
+	case len(problems) > 0:
+		entry.Reason = Reasons(problems)
+	case err != nil:
+		entry.Reason = condense(err.Error())
+	}
+	if err := r.Ledger.Append(entry); err != nil {
+		r.log("%s: the ledger line did not write: %v", job.Target, err)
+	}
+}
+
+// read asks the engine and times it, taking the token counts from the lanes
+// that keep them.
+func (r *Runner) read(ctx context.Context, image string, spent *meter) (string, error) {
+	started := r.now()
+	var (
+		raw string
+		err error
+	)
+	if metered, ok := r.Engine.(Metered); ok {
+		raw, spent.usage, err = metered.ReadMetered(ctx, image)
+	} else {
+		raw, err = r.Engine.Read(ctx, image)
+	}
+	spent.read = true
+	spent.seconds = r.now().Sub(started).Seconds()
+	return raw, err
+}
+
+func (r *Runner) attempt(ctx context.Context, job queue.Job, spent *meter) (queue.State, []Problem, error) {
 	image := job.Meta["image"]
 	if image == "" {
 		state, err := r.Queue.Fail(job, "the job carries no image path")
@@ -227,7 +298,7 @@ func (r *Runner) one(ctx context.Context, job queue.Job) (queue.State, []Problem
 		return queue.Pending, nil, fmt.Errorf("%s: %w", job.Target, err)
 	}
 
-	raw, err := r.Engine.Read(ctx, image)
+	raw, err := r.read(ctx, image, spent)
 	if err != nil {
 		state, failErr := r.Queue.Fail(job, condense(err.Error()))
 		return state, nil, orErr(failErr, err)

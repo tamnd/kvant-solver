@@ -51,7 +51,12 @@ func addFetchFlags(fs *pflag.FlagSet) fetchFlags {
 }
 
 // selected reads the issue list and picks the issues a run is about.
-func selected(f fetchFlags) ([]manifest.Issue, error) {
+func selected(f fetchFlags) ([]manifest.Issue, error) { return pickIssues(f, nil) }
+
+// pickIssues is selected with an extra test, for the commands that take a range
+// of years rather than a list of them. A nil test keeps everything the flags
+// left.
+func pickIssues(f fetchFlags, keep func(manifest.Issue) bool) ([]manifest.Issue, error) {
 	store, err := manifest.Open(*f.root)
 	if err != nil {
 		return nil, err
@@ -70,6 +75,9 @@ func selected(f fetchFlags) ([]manifest.Issue, error) {
 			continue
 		}
 		if len(*f.issues) > 0 && !slices.Contains(*f.issues, iss.Key) {
+			continue
+		}
+		if keep != nil && !keep(iss) {
 			continue
 		}
 		out = append(out, iss)

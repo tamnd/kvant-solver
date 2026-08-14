@@ -78,6 +78,31 @@ func (c *Corpus) Pages(lang string, key IssueKey) ([]int, error) {
 	return indexes, nil
 }
 
+// Articles lists the article files an issue has on disk, in the order a
+// directory listing gives them, which is the printed order because the ordinal
+// is the start of the name.
+//
+// Names rather than ids, because the caller that wants this wants to count them
+// and, when the count is wrong, to say which ones are there. A missing
+// directory is an issue that has not been assembled and comes back empty.
+func (c *Corpus) Articles(lang string, key IssueKey) ([]string, error) {
+	entries, err := os.ReadDir(filepath.Join(c.IssueDir(lang, key), "articles"))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	var names []string
+	for _, entry := range entries {
+		if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".md") {
+			names = append(names, entry.Name())
+		}
+	}
+	sort.Strings(names)
+	return names, nil
+}
+
 // Missing is the gap between what an issue should have and what it has, which
 // is what the runner queues and what the audit reports.
 func (c *Corpus) Missing(lang string, key IssueKey, sheets int) ([]int, error) {
