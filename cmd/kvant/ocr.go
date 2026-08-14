@@ -3,23 +3,18 @@ package main
 import (
 	"context"
 	"fmt"
-	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
-	"strings"
 	"syscall"
-	"time"
 
 	"github.com/spf13/pflag"
 
-	"github.com/tamnd/kvant-solver/api"
 	"github.com/tamnd/kvant-solver/corpus"
 	"github.com/tamnd/kvant-solver/fetch"
 	"github.com/tamnd/kvant-solver/katex"
 	"github.com/tamnd/kvant-solver/manifest"
 	"github.com/tamnd/kvant-solver/ocr"
-	"github.com/tamnd/kvant-solver/prompt"
 	"github.com/tamnd/kvant-solver/queue"
 )
 
@@ -29,27 +24,13 @@ func runOCR(args []string) error {
 	queueDir := fs.String("queue", "", "where the job queue lives, cache/queue by default")
 	work := fs.String("work", "", "where page images are staged, cache/work by default")
 	images := fs.String("images", "", "read these images instead of staging from the cache")
-	// The endpoint is the whole of the engine choice. chatgpt-tool serve and
-	// vllm serve answer the same route, so the difference between the browser
-	// lane and the card in the other room is a URL and a model name.
-	endpoint := fs.String("api", envOr("KVANT_API", "http://127.0.0.1:8000/v1/chat/completions"), "an OpenAI shaped endpoint that takes an image")
-	key := fs.String("api-key", os.Getenv("KVANT_API_KEY"), "bearer token for the endpoint, when it wants one")
-	model := fs.String("model", envOr("KVANT_MODEL", "zai-org/GLM-OCR"), "the model to ask")
-	// A document model wants one sentence and a general model wants the whole
-	// page prompt, and sending the wrong one to either costs both speed and
-	// accuracy. It defaults to short because the endpoint above defaults to the
-	// card.
-	short := fs.Bool("short-prompt", true, "send the one sentence prompt a document model wants")
-	// The repair lane. A page the card cannot read is not read by asking the
-	// card again, because the sampling is pinned and the answer is the same one;
-	// it is read by something else.
-	lane := fs.String("engine", "served", "served for an endpoint, cli for a local program")
-	command := fs.String("cli", envOr("KVANT_CLI", "claude -p --allowedTools Read"), "the program the cli engine runs")
+	engineFlags := addLaneFlags(fs, "served")
 	only := fs.IntSlice("sheets", nil, "read only these sheets, which is how a repair pass is aimed")
 	workers := fs.Int("workers", 1, "pages in flight at once, which the browser lane must leave at one")
-	timeout := fs.Duration("timeout", ocr.DefaultPageTimeout, "how long one page may take")
 	lang := fs.String("lang", corpus.DefaultLang, "the tree the pages are written into")
 	checkTeX := fs.Bool("latex", true, "run every formula through KaTeX before accepting a page")
+	ledgerPath := fs.String("ledger", "", "where the cost ledger is appended, cache/ledger/ocr.jsonl by default")
+	noLedger := fs.Bool("no-ledger", false, "do not record what the run cost")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -88,61 +69,21 @@ func runOCR(args []string) error {
 		options.LaTeX = renderer
 	}
 
-	text, sum := prompt.OCRPage(), prompt.OCRPageSHA256()
-	if *short {
-		text, sum = prompt.OCRShort(), prompt.OCRShortSHA256()
+	reader, err := engineFlags.build()
+	if err != nil {
+		return err
 	}
 
-	client := &api.Client{
-		URL:        *endpoint,
-		APIKey:     *key,
-		HTTPClient: &http.Client{Timeout: *timeout + time.Minute},
-		UserAgent:  "kvant/" + version,
-	}
-
-	var engine ocr.Engine
-	// The folio band is only read for the lane that needs it. A general model
-	// answers the folio question in the page prompt, and reading a corner of
-	// the same page a second time to check it would be one more call for less
-	// evidence.
-	var folio *ocr.Folioer
-	switch *lane {
-	case "served":
-		engine = ocr.Served{Client: client, Model: *model, Prompt: text, Timeout: *timeout}
-		if *short {
-			folio = &ocr.Folioer{Engine: ocr.Served{
-				Client:  client,
-				Model:   *model,
-				Prompt:  prompt.OCRBand(),
-				Timeout: *timeout,
-			}}
+	// The ledger is on by default. A twenty year run is the thing whose cost
+	// somebody asks about afterwards, and a run that was not recorded cannot
+	// answer, so the flag turns it off rather than on.
+	var ledger *ocr.Ledger
+	if !*noLedger {
+		ledger, err = ocr.OpenLedger(fileOr(*ledgerPath, cache.Dir, "ledger", "ocr.jsonl"))
+		if err != nil {
+			return err
 		}
-	case "cli":
-		fields := strings.Fields(*command)
-		if len(fields) == 0 {
-			return fmt.Errorf("--cli names no program")
-		}
-		// A general model gets the whole page prompt whatever --short-prompt
-		// says, because --short-prompt is about the card. The one sentence
-		// version exists to stop a recogniser drowning in instructions, and a
-		// model that follows instructions should be given them: it is the only
-		// lane that can answer the folio question by itself.
-		// The default --model names the card's model, which did not read this
-		// page, so it is only believed here when it was asked for.
-		name := fields[0]
-		if fs.Changed("model") {
-			name = *model
-		}
-		engine = ocr.Command{
-			Model:   name,
-			Path:    fields[0],
-			Args:    fields[1:],
-			Prompt:  prompt.OCRPage(),
-			Timeout: *timeout,
-		}
-		text, sum = prompt.OCRPage(), prompt.OCRPageSHA256()
-	default:
-		return fmt.Errorf("--engine is served or cli, not %q", *lane)
+		defer func() { _ = ledger.Close() }()
 	}
 
 	// Ctrl-C stops the run and leaves the queue as it is, which is the whole
@@ -180,12 +121,12 @@ func runOCR(args []string) error {
 		}
 
 		runner := &ocr.Runner{
-			Queue: jobs, Engine: engine, Corpus: c,
+			Queue: jobs, Engine: reader.Engine, Corpus: c,
 			Lang: *lang, Issue: key,
 			Source: scanSource(&issues[i]), Scan: idx.Issue,
-			Prompt: text, PromptSHA256: sum,
-			Folio:   folio,
-			Options: options, Workers: *workers,
+			Prompt: reader.Prompt, PromptSHA256: reader.SHA256,
+			Folio:   reader.Folio,
+			Options: options, Workers: *workers, Ledger: ledger,
 			Logf: func(format string, args ...any) { fmt.Printf("  "+format+"\n", args...) },
 		}
 		// A sheet is named on the command line because the last lane could not
@@ -208,7 +149,7 @@ func runOCR(args []string) error {
 			return err
 		}
 		fmt.Printf("%s: %d sheets, %d queued, %s at %d worker(s)\n",
-			issues[i].Key, len(sheets), added, engine.Name(), max(1, *workers))
+			issues[i].Key, len(sheets), added, reader.Engine.Name(), max(1, *workers))
 
 		summary, err := runner.Run(ctx)
 		fmt.Printf("%s: %s\n", issues[i].Key, summary)
@@ -361,6 +302,14 @@ func dirOr(set, base, name string) string {
 		return set
 	}
 	return filepath.Join(base, name)
+}
+
+// fileOr is dirOr for a path that ends in a file rather than a directory.
+func fileOr(set, base string, parts ...string) string {
+	if set != "" {
+		return set
+	}
+	return filepath.Join(append([]string{base}, parts...)...)
 }
 
 func envOr(name, fallback string) string {

@@ -156,6 +156,18 @@ func TestParseFolioTakesThePageNumberAndNotTheYear(t *testing.T) {
 		// a short one made of the same letters.
 		{"Bis", 0, false},
 		{"SOIL", 0, false},
+		// The printer's signature mark shares the band with the folio on the
+		// first page of every gathering, and it is at the inner corner so it is
+		// read first. Sheet 21 of 1975 №2 and of 1975 №3 are both printed page
+		// 19 and both came back as 2 before this.
+		{"2* 19", 19, true},
+		{"2*\n19", 19, true},
+		{"2 * 19", 19, true},
+		// A signature with nothing else in the band is a page whose number did
+		// not make it into the crop, and no answer is the honest one. Returning
+		// the signature would place the page nineteen leaves from where it was
+		// printed.
+		{"2*", 0, false},
 	}
 	for _, c := range cases {
 		got, found := ocr.ParseFolio(c.answer)

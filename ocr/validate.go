@@ -345,6 +345,45 @@ func Reasons(problems []Problem) string {
 	return strings.Join(parts, "; ")
 }
 
+// ParseRules reads the rules back out of a line Reasons wrote.
+//
+// The failures report is built long after the run, from the queue history and
+// from the ledger, and both of those hold the sentence rather than the problems
+// it came from. Reading the names back is a little inelegant, but the
+// alternative is a second copy of the rule list in every job file, and the
+// format it is parsing is one this package also writes.
+//
+// Anything that is not a rule name is dropped. A page can fail for a reason the
+// rules never had, such as the service being down, and calling that rule zero
+// would put an outage in the same column as a bad scan.
+func ParseRules(reason string) []Rule {
+	known := map[Rule]bool{}
+	for _, rule := range AllRules {
+		known[rule] = true
+	}
+	seen := map[Rule]bool{}
+	var out []Rule
+	for part := range strings.SplitSeq(reason, ";") {
+		name, _, ok := strings.Cut(strings.TrimSpace(part), ":")
+		if !ok {
+			continue
+		}
+		rule := Rule(strings.TrimSpace(name))
+		if known[rule] && !seen[rule] {
+			seen[rule] = true
+			out = append(out, rule)
+		}
+	}
+	return out
+}
+
+// AllRules is the eight in the order Validate runs them, for the reports that
+// print a column per rule.
+var AllRules = []Rule{
+	RuleShort, RuleMath, RuleLeak, RuleLanguage,
+	RuleFolio, RuleIllegible, RuleLaTeX, RuleScript,
+}
+
 // Rules returns the distinct rules that rejected a page, which is what the
 // retry policy switches on.
 func Rules(problems []Problem) []Rule {

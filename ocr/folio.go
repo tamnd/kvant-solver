@@ -215,8 +215,21 @@ func dark(img image.Image, x, y int) bool {
 // that is a number.
 var digits = regexp.MustCompile(`\d+`)
 
+// signature is the printer's mark, which is a small number with an asterisk
+// after it at the inner corner of the first page of a gathering.
+//
+// It has to be thrown away before anything else is read, and it cost real pages
+// to find out. Sheet 21 of both 1975 №2 and №3 is printed page 19, and both
+// came back as 2, because the foot of that page carries 2* at the left and 19
+// at the right and the band is the whole width. Every issue of the run is set
+// the same way, so this is one wrong page per gathering per issue, which over
+// twenty years is thousands of pages rejected by the folio rule for a number
+// that was never the page number.
+var signature = regexp.MustCompile(`\d+\s*\*`)
+
 // ParseFolio picks the printed number out of what came back from the band.
 func ParseFolio(answer string) (int, bool) {
+	answer = signature.ReplaceAllString(answer, " ")
 	for _, match := range digits.FindAllString(answer, -1) {
 		number, err := strconv.Atoi(match)
 		if err != nil {
