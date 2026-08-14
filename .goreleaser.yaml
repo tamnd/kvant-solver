@@ -1,0 +1,70 @@
+version: 2
+
+project_name: kvant-solver
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: kvant
+    main: ./cmd/kvant
+    binary: kvant
+    env:
+      - CGO_ENABLED=0
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+      - -X main.version={{ .Version }}
+      - -X main.commit={{ .Commit }}
+      - -X main.date={{ .Date }}
+
+archives:
+  - formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    files:
+      - README.md
+      - LICENSE
+
+nfpms:
+  - id: packages
+    package_name: kvant-solver
+    maintainer: Tam Nguyen
+    description: Toolchain that builds the Kvant corpus and solves its problems
+    license: MIT
+    formats: [deb, rpm, apk]
+    dependencies:
+      - poppler-utils
+
+dockers:
+  - image_templates:
+      - "ghcr.io/tamnd/kvant-solver:{{ .Version }}"
+      - "ghcr.io/tamnd/kvant-solver:latest"
+    dockerfile: Dockerfile.release
+    build_flag_templates:
+      - "--label=org.opencontainers.image.source=https://github.com/tamnd/kvant-solver"
+      - "--label=org.opencontainers.image.version={{ .Version }}"
+      - "--label=org.opencontainers.image.licenses=MIT"
+
+checksum:
+  name_template: checksums.txt
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+
+release:
+  footer: |
+    Needs poppler for pdfinfo, pdftotext, pdftoppm and pdffonts.
