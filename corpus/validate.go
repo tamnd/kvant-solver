@@ -24,7 +24,7 @@ func (f *PageFront) Validate() error {
 	if f.PageIndex < 1 {
 		errs = append(errs, fmt.Errorf("page_index %d is not positive", f.PageIndex))
 	}
-	errs = append(errs, f.Provenance.validate()...)
+	errs = append(errs, f.validateProvenance()...)
 	return errors.Join(errs...)
 }
 
@@ -49,7 +49,7 @@ func (f *ArticleFront) Validate() error {
 	if f.Tag != "" && !f.Tag.Valid() {
 		errs = append(errs, fmt.Errorf("tag %q is not four characters of 0-9 and A-Z", f.Tag))
 	}
-	errs = append(errs, f.Provenance.validate()...)
+	errs = append(errs, f.validateProvenance()...)
 	return errors.Join(errs...)
 }
 
@@ -76,7 +76,7 @@ func (f *ProblemFront) Validate() error {
 	if f.Tag != "" && !f.Tag.Valid() {
 		errs = append(errs, fmt.Errorf("tag %q is not four characters of 0-9 and A-Z", f.Tag))
 	}
-	errs = append(errs, f.Provenance.validate()...)
+	errs = append(errs, f.validateProvenance()...)
 	return errors.Join(errs...)
 }
 
@@ -89,13 +89,13 @@ func (f *SolutionFront) Validate() error {
 	if f.GradedAgainstPublished && f.Agreement == "" {
 		errs = append(errs, errors.New("graded_against_published is true but agreement is empty"))
 	}
-	errs = append(errs, f.Provenance.validate()...)
+	errs = append(errs, f.validateProvenance()...)
 	return errors.Join(errs...)
 }
 
 var knownExtractions = []string{ExtractionNative, ExtractionPublisher, ExtractionVision}
 
-func (p *Provenance) validate() []error {
+func (p *Provenance) validateProvenance() []error {
 	var errs []error
 	if strings.TrimSpace(p.Lang) == "" {
 		errs = append(errs, errors.New("lang is empty"))

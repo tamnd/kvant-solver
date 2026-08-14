@@ -21,6 +21,12 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
+    defaults:
+      run:
+        # PowerShell splits go test -coverprofile=coverage.out in the wrong
+        # place and then tries to build a package called .out, so run every
+        # step under bash on all three runners.
+        shell: bash
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-go@v6

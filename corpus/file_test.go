@@ -1,6 +1,7 @@
 package corpus
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -116,7 +117,7 @@ func TestLoadRejectsUnknownFields(t *testing.T) {
 }
 
 func TestSplit(t *testing.T) {
-	if _, _, err := Split([]byte("no front matter here\n")); err != ErrNoFrontMatter {
+	if _, _, err := Split([]byte("no front matter here\n")); !errors.Is(err, ErrNoFrontMatter) {
 		t.Errorf("want ErrNoFrontMatter, got %v", err)
 	}
 	if _, _, err := Split([]byte("---\nissue: x\n")); err == nil {
