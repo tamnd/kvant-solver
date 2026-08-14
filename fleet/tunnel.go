@@ -8,7 +8,6 @@ import (
 	"os/exec"
 	"strconv"
 	"sync"
-	"syscall"
 	"time"
 )
 
@@ -153,9 +152,7 @@ func (s *Supervisor) launch(link Link) (Process, error) {
 		binary = "ssh"
 	}
 	cmd := exec.Command(binary, tunnelArgs(link)...)
-	// Its own process group, so it outlives the command that started it and so
-	// a stray Ctrl-C in the terminal does not take the fleet down with it.
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	detach(cmd)
 	if err := cmd.Start(); err != nil {
 		return nil, err
 	}
@@ -194,9 +191,7 @@ type sshProcess struct {
 func (p *sshProcess) PID() int { return p.cmd.Process.Pid }
 
 func (p *sshProcess) Kill() error {
-	// The whole group: ssh may have children, and killing only the leader
-	// leaves the forward held open by something with no parent.
-	if err := syscall.Kill(-p.cmd.Process.Pid, syscall.SIGTERM); err != nil {
+	if err := killGroup(p.cmd.Process.Pid); err != nil {
 		return p.cmd.Process.Kill()
 	}
 	return nil
@@ -339,14 +334,14 @@ func Kill(pid int) error {
 	if pid <= 0 {
 		return fmt.Errorf("no pid")
 	}
-	if err := syscall.Kill(-pid, syscall.SIGTERM); err == nil {
+	if err := killGroup(pid); err == nil {
 		return nil
 	}
 	process, err := os.FindProcess(pid)
 	if err != nil {
 		return nil
 	}
-	if err := process.Signal(syscall.SIGTERM); err != nil && !errors.Is(err, os.ErrProcessDone) {
+	if err := terminate(process); err != nil && !errors.Is(err, os.ErrProcessDone) {
 		return err
 	}
 	return nil
@@ -363,7 +358,7 @@ func Alive(pid int) bool {
 	if err != nil {
 		return false
 	}
-	return process.Signal(syscall.Signal(0)) == nil
+	return running(process)
 }
 
 // Forward is the -L argument for a link, which fleet status prints so a person

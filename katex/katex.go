@@ -101,12 +101,23 @@ func (r *Renderer) Render(tex string, display bool) (string, error) {
 		return html, nil
 	}
 
+	// set collects the errors from building the options object so the whole
+	// thing is checked once at the end. A property set on an object this
+	// package just made cannot fail, but writing eighteen ignored returns to
+	// say so reads worse than this does.
+	var setErr error
+	set := func(o *goja.Object, name string, value any) {
+		if err := o.Set(name, value); err != nil && setErr == nil {
+			setErr = err
+		}
+	}
+
 	opts := r.vm.NewObject()
-	opts.Set("displayMode", display)
+	set(opts, "displayMode", display)
 	// throwOnError is the default and is set anyway, because the alternative is
 	// KaTeX writing the error into the page in red, which is the one behaviour
 	// this must not have.
-	opts.Set("throwOnError", true)
+	set(opts, "throwOnError", true)
 	// The macros are the Russian function names. KaTeX knows tan and cot and
 	// has never heard of tg, ctg, arctg, arcctg, sh, ch or th, which is what
 	// this magazine prints and what the prompt asks the model to keep. Defining
@@ -119,10 +130,13 @@ func (r *Renderer) Render(tex string, display bool) (string, error) {
 	// with the bare command anyway.
 	macros := r.vm.NewObject()
 	for _, name := range []string{"tg", "ctg", "arctg", "arcctg", "sh", "ch", "th", "cth", "arcsh", "arcch", "arcth"} {
-		macros.Set(`\`+name, `\mathrm{`+name+`}`)
+		set(macros, `\`+name, `\mathrm{`+name+`}`)
 	}
-	opts.Set("macros", macros)
-	opts.Set("strict", false)
+	set(opts, "macros", macros)
+	set(opts, "strict", false)
+	if setErr != nil {
+		return "", setErr
+	}
 
 	v, err := r.call(goja.Undefined(), r.vm.ToValue(tex), opts)
 	if err != nil {
