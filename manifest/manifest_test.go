@@ -131,8 +131,10 @@ func TestWriteIsAtomic(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if info.Mode().Perm() != 0o644 {
-		t.Errorf("the manifest is mode %v", info.Mode().Perm())
+	// Readable by everyone rather than exactly 0644, because Windows has no
+	// permission bits to speak of and reports 0666 whatever was asked for.
+	if perm := info.Mode().Perm(); perm&0o044 != 0o044 {
+		t.Errorf("the manifest is mode %v, which is private to whoever ran the sync", perm)
 	}
 }
 
