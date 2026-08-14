@@ -31,7 +31,9 @@ func (c *Client) IssuesIndex(ctx context.Context) ([]IssueRef, error) {
 	return refs, nil
 }
 
-// Issue returns the header and contents of one issue.
+// Issue returns the header, the contents and the scan manifest of one issue.
+// That is everything this site knows about it, and it is one request: the
+// thumbnail strip on the same page names every sheet.
 func (c *Client) Issue(ctx context.Context, year int, number string) (*Issue, error) {
 	u := IssueURL(year, number)
 	resp, err := c.Fetcher.Get(ctx, u)
@@ -45,17 +47,49 @@ func (c *Client) Issue(ctx context.Context, year int, number string) (*Issue, er
 	return iss, nil
 }
 
-// Pages returns the scan manifest for one issue: every sheet, its file name,
-// and the number printed on it. One request per issue, no probing.
-func (c *Client) Pages(ctx context.Context, issueKey string) ([]Sheet, error) {
-	u := ViewURL(issueKey, 0)
+// Personalia returns every named contributor. The index paginates, and the
+// first page says how many there are, so this is one request to find out and
+// then one per remaining page.
+func (c *Client) Personalia(ctx context.Context) ([]Person, error) {
+	first, err := c.PersonaliaPage(ctx, 1)
+	if err != nil {
+		return nil, err
+	}
+	people := first.People
+	for page := 2; page <= first.LastPage; page++ {
+		next, err := c.PersonaliaPage(ctx, page)
+		if err != nil {
+			return people, err
+		}
+		people = append(people, next.People...)
+	}
+	return people, nil
+}
+
+// PersonaliaPage returns one page of the personalia index.
+func (c *Client) PersonaliaPage(ctx context.Context, page int) (*PersonaliaPage, error) {
+	u := PersonaliaPageURL(page)
 	resp, err := c.Fetcher.Get(ctx, u)
 	if err != nil {
 		return nil, err
 	}
-	sheets, err := ParsePages(bytes.NewReader(resp.Body), issueKey)
+	p, err := ParsePersonalia(bytes.NewReader(resp.Body))
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", u, err)
 	}
-	return sheets, nil
+	return p, nil
+}
+
+// Problem returns one problem with both halves. The subject is M or F.
+func (c *Client) Problem(ctx context.Context, subject string, number int) (*Problem, error) {
+	u := ProblemURL(subject, number)
+	resp, err := c.Fetcher.Get(ctx, u)
+	if err != nil {
+		return nil, err
+	}
+	p, err := ParseProblem(bytes.NewReader(resp.Body))
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", u, err)
+	}
+	return p, nil
 }

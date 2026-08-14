@@ -80,6 +80,11 @@ func TestParseIssue(t *testing.T) {
 	if len(iss.Rows) == 0 {
 		t.Fatal("no contents rows")
 	}
+	// The scan manifest comes off the same page as the contents, so an issue
+	// costs one request rather than two.
+	if len(iss.Sheets) != 8 {
+		t.Errorf("%d sheets, the fixture has 8 thumbnails", len(iss.Sheets))
+	}
 }
 
 func TestFirstContentsRow(t *testing.T) {
@@ -177,8 +182,9 @@ func TestURLBuilders(t *testing.T) {
 	if got := IssueURL(1976, "5-6"); got != "https://www.kvant.digital/issues/1976/5-6/" {
 		t.Errorf("IssueURL: %s", got)
 	}
-	if got := ViewURL("kvant_1975_1", 3); got != "https://www.kvant.digital/view/kvant_1975_1/p3/" {
-		t.Errorf("ViewURL: %s", got)
+	// There is no builder for a viewer URL. robots.txt disallows /view.
+	if got := ScanURL("kvant_1975_1", "0001"); got != "https://www.kvant.digital/data/kvant_1975_1/jpg/0001.jpg" {
+		t.Errorf("ScanURL: %s", got)
 	}
 	if got := ProblemURL("M", 1234); got != "https://www.kvant.digital/problems/m1234/" {
 		t.Errorf("ProblemURL: %s", got)

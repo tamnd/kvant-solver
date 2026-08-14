@@ -30,6 +30,10 @@ type Issue struct {
 	CoverURL    string
 	URL         string
 	Rows        []TOCRow
+
+	// Sheets is the scan manifest, read off the thumbnail strip on the same
+	// page. See ParsePages.
+	Sheets []Sheet
 }
 
 // TOCRow is one line of a printed table of contents. A row is not always an
@@ -113,6 +117,7 @@ func ParseIssue(r io.Reader, year int, number string) (*Issue, error) {
 		CoverURL: CoverURL(key),
 	}
 
+	iss.Sheets = parseSheets(doc)
 	iss.Title = strings.TrimSpace(doc.Find("title").First().Text())
 	if i := strings.Index(iss.Title, " / "); i > 0 {
 		iss.Title = strings.TrimSpace(iss.Title[:i])

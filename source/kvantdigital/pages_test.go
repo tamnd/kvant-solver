@@ -6,18 +6,19 @@ import (
 )
 
 func TestParsePages(t *testing.T) {
-	// The fixture is the first five and last four entries of the real page
-	// list for 1975 number 1, which is enough to cover every shape of sheet
-	// the viewer emits.
-	sheets, err := ParsePages(open(t, "view_1975_1.html"), "kvant_1975_1")
+	// The fixture is the issue page for 1975 number 1 with the first five and
+	// last three thumbnails of the real strip, which is enough to cover every
+	// shape of sheet the site has: a cover, a cover back, a numbered page and
+	// the lettered files at the end.
+	sheets, err := ParsePages(open(t, "issue_1975_1.html"), "kvant_1975_1")
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Nine entries in the fixture, but the first two share an anchor: the
-	// viewer opens with a spacer that repeats the cover so the two page spread
-	// lands the right way round. Counting it would double the cover.
+	// Eight thumbnails, and the contents rows below them link into the viewer
+	// as well, one per article. Counting those would turn a table of contents
+	// into a scan manifest.
 	if len(sheets) != 8 {
-		t.Fatalf("got %d sheets, want 8 after the spacer is dropped", len(sheets))
+		t.Fatalf("got %d sheets, want the 8 in the thumbnail strip", len(sheets))
 	}
 
 	first := sheets[0]
@@ -32,8 +33,25 @@ func TestParsePages(t *testing.T) {
 	}
 }
 
+func TestALabelIsNotABarePageNumber(t *testing.T) {
+	sheets, err := ParsePages(open(t, "issue_1975_1.html"), "kvant_1975_1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The thumbnails label a numbered page Стр. 1, with a non breaking space
+	// in the middle, where the viewer wrote the bare number. Reading the label
+	// as a number would leave every page in the archive unnumbered.
+	one, ok := SheetForPage(sheets, 1)
+	if !ok {
+		t.Fatal("printed page 1 is not in the list")
+	}
+	if one.Label != "Стр. 1" {
+		t.Errorf("label of printed page 1 is %q", one.Label)
+	}
+}
+
 func TestSheetNumberingIsNotArithmetic(t *testing.T) {
-	sheets, err := ParsePages(open(t, "view_1975_1.html"), "kvant_1975_1")
+	sheets, err := ParsePages(open(t, "issue_1975_1.html"), "kvant_1975_1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -60,7 +78,7 @@ func TestSheetNumberingIsNotArithmetic(t *testing.T) {
 }
 
 func TestCoverBacksHaveLetteredFiles(t *testing.T) {
-	sheets, err := ParsePages(open(t, "view_1975_1.html"), "kvant_1975_1")
+	sheets, err := ParsePages(open(t, "issue_1975_1.html"), "kvant_1975_1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -83,7 +101,7 @@ func TestCoverBacksHaveLetteredFiles(t *testing.T) {
 }
 
 func TestEveryNumberedSheetHasAnImage(t *testing.T) {
-	sheets, err := ParsePages(open(t, "view_1975_1.html"), "kvant_1975_1")
+	sheets, err := ParsePages(open(t, "issue_1975_1.html"), "kvant_1975_1")
 	if err != nil {
 		t.Fatal(err)
 	}

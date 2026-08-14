@@ -14,6 +14,11 @@ import (
 func testClient(delay time.Duration) *Client {
 	c := NewClient()
 	c.Delay = delay
+	// These tests are about the fetching, and a test server answers every path
+	// including /robots.txt, so leaving the check on would have every one of
+	// them assert something about robots.txt by accident. That check has its
+	// own tests in robots_test.go.
+	c.IgnoreRobots = true
 	return c
 }
 

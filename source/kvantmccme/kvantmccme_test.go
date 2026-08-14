@@ -74,6 +74,22 @@ func TestParseContents(t *testing.T) {
 	}
 }
 
+func TestTheMastheadIsNotTheFirstArticle(t *testing.T) {
+	c := contents(t)
+	// The masthead has a stack of breaks in it and the entries are separated by
+	// a pair of breaks, so a naive split cuts it up and hands back its bold
+	// lines as articles. It also runs straight into the first entry with no
+	// separator, so the first article of every issue is what gets lost.
+	for _, e := range c.Entries {
+		if strings.Contains(e.Title, "Редакция") || strings.Contains(e.Title, "издается") {
+			t.Errorf("a line of the masthead came back as the article %q", e.Title)
+		}
+	}
+	if c.Entries[0].Title != "Равенства из спичек" {
+		t.Errorf("first entry is %q, the issue opens with Равенства из спичек", c.Entries[0].Title)
+	}
+}
+
 func TestPagesAreAListNotARange(t *testing.T) {
 	c := contents(t)
 	var multi *Entry
@@ -131,9 +147,8 @@ func TestURLBuilders(t *testing.T) {
 	if got := IssueByTitleURL(1975, "01"); got != "https://kvant.mccme.ru/1975/01/index_n.htm" {
 		t.Errorf("IssueByTitleURL: %s", got)
 	}
-	if got := IssuePDFURL(2015, "01"); got != "https://kvant.mccme.ru/pdf/2015/2015-01.pdf" {
-		t.Errorf("IssuePDFURL: %s", got)
-	}
+	// There is no builder for a PDF on purpose. The mirror names those four
+	// different ways and the URL comes off its archive page instead.
 	if got := AuthorURL("antonovich_n"); got != "https://kvant.mccme.ru/au/antonovich_n.htm" {
 		t.Errorf("AuthorURL: %s", got)
 	}

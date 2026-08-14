@@ -9,7 +9,6 @@
 package kvantmccme
 
 import (
-	"bytes"
 	"fmt"
 	"io"
 	"net/url"
@@ -18,8 +17,7 @@ import (
 	"strings"
 
 	"github.com/PuerkitoBio/goquery"
-	"golang.org/x/text/encoding/charmap"
-	"golang.org/x/text/transform"
+	"github.com/tamnd/kvant-solver/source"
 )
 
 // BaseURL is the mirror root.
@@ -37,20 +35,22 @@ func IssueByTitleURL(year int, month string) string {
 	return fmt.Sprintf("%s/%d/%s/index_n.htm", BaseURL, year, month)
 }
 
-// IssuePDFURL is the whole issue as one PDF. These exist from 2007 and are
-// born digital, so their text comes out with pdftotext and never goes near
-// OCR.
-func IssuePDFURL(year int, month string) string {
-	return fmt.Sprintf("%s/pdf/%d/%d-%s.pdf", BaseURL, year, year, month)
-}
-
 // AuthorURL is one author's page in the index.
 func AuthorURL(slug string) string {
 	return fmt.Sprintf("%s/au/%s.htm", BaseURL, slug)
 }
 
-// FirstPDFYear is the first year with a whole issue PDF.
-const FirstPDFYear = 2007
+// There is no IssuePDFURL. The mirror names its PDFs four different ways over
+// twenty years, including 2006-01s.pdf and 2024-05-06.pdf, so the URL comes off
+// the archive page rather than out of a format string. See archive.go.
+
+// FirstPDFYear is the first year the mirror has whole issue PDFs for.
+const FirstPDFYear = 2005
+
+// FirstNativeYear is the first year those PDFs are born digital rather than a
+// scan. From here an issue's text comes out with pdftotext and never goes near
+// a vision model.
+const FirstNativeYear = 2007
 
 // Entry is one row of an issue's contents on the mirror.
 type Entry struct {
@@ -106,13 +106,7 @@ var (
 // that encoding and none of them say so in a way Go's HTML parser acts on, so
 // reading one as UTF-8 gives a page of replacement characters rather than an
 // error, which is the kind of bug that gets committed.
-func Decode(r io.Reader) (io.Reader, error) {
-	b, err := io.ReadAll(transform.NewReader(r, charmap.Windows1251.NewDecoder()))
-	if err != nil {
-		return nil, err
-	}
-	return bytes.NewReader(b), nil
-}
+func Decode(r io.Reader) (io.Reader, error) { return source.DecodeWindows1251(r) }
 
 // ParseContents reads one issue's contents page. The reader is the raw
 // Windows-1251 bytes.
@@ -133,7 +127,7 @@ func ParseContents(r io.Reader, year int, month string) (*Contents, error) {
 	}
 
 	out := &Contents{Year: year, Month: month}
-	for _, chunk := range reBreakPair.Split(body, -1) {
+	for _, chunk := range reBreakPair.Split(entriesRegion(body), -1) {
 		entry, ok := parseEntry(chunk, base)
 		if ok {
 			out.Entries = append(out.Entries, entry)
@@ -143,6 +137,30 @@ func ParseContents(r io.Reader, year int, month string) (*Contents, error) {
 		return nil, fmt.Errorf("%d/%s: no entries, the markup has probably moved", year, month)
 	}
 	return out, nil
+}
+
+// entriesRegion drops the mirror's masthead.
+//
+// Entries are separated by a pair of breaks, and the masthead has a stack of
+// four of them inside a table cell, so splitting the whole body cuts the
+// masthead into pieces and hands back its bold lines as articles. It also puts
+// no break pair between itself and the first entry, which then arrives glued to
+// it and loses its title to the masthead. Everything from the sort selector on
+// is contents, and every contents page the mirror has carries that selector.
+func entriesRegion(body string) string {
+	i := strings.Index(body, "сортировать")
+	if i < 0 {
+		return body
+	}
+	const end = "</div>"
+	j := strings.Index(body[i:], end)
+	if j < 0 {
+		return body[i:]
+	}
+	// Past the closing tag, not up to it: a chunk that opens with a stray
+	// closing tag closes the wrapper parseEntry puts around it, and the entry
+	// then sits outside the element being read.
+	return body[i+j+len(end):]
 }
 
 // parseEntry reads one chunk of the flat contents. A chunk without a bold
@@ -157,6 +175,10 @@ func parseEntry(chunk string, base string) (Entry, bool) {
 		return Entry{}, false
 	}
 	root := doc.Find("div").First()
+
+	// The page furniture is laid out in tables and the entries are not, so the
+	// footer that trails the last entry cannot contribute a title.
+	root.Find("table, div, hr").Remove()
 
 	// The mirror nests b inside b, so take the first one with text in it.
 	var entry Entry

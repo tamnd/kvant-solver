@@ -29,11 +29,9 @@ func IssueKey(year int, number string) string {
 	return fmt.Sprintf("kvant_%d_%s", year, number)
 }
 
-// ViewURL opens one sheet of an issue in the page viewer. The sheet number is
-// not the printed page number, see Sheet on TOCRow.
-func ViewURL(issueKey string, sheet int) string {
-	return fmt.Sprintf("%s/view/%s/p%d/", BaseURL, issueKey, sheet)
-}
+// There is no builder for a viewer URL. robots.txt disallows /view, so those
+// links are read for the sheet number in them and never followed, and a builder
+// would only be an invitation to fetch one.
 
 // ScanURL is the JPEG of one scanned sheet. The file name is not derived from
 // the page number: it is zero padded, zero based, and inserts and cover backs
