@@ -12,8 +12,10 @@ linters:
     - bodyclose
     - errorlint
   settings:
-    misspell:
-      locale: UK
+    # misspell runs with no locale on purpose. Identifiers here follow the
+    # standard library, which spells it image/color, and pdfimages names its own
+    # column color too. Asking for UK spelling makes both of those lint errors
+    # and finds nothing real in exchange.
     revive:
       rules:
         - name: exported
