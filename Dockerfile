@@ -9,7 +9,7 @@ RUN go mod download
 COPY . .
 RUN CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o /out/kvant ./cmd/kvant
 
-FROM alpine:3.22
+FROM alpine:3.24
 # poppler-utils gives pdfinfo, pdftotext, pdftoppm and pdffonts, which the
 # native extraction path shells out to.
 RUN apk add --no-cache poppler-utils ca-certificates
