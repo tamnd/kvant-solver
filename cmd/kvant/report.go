@@ -8,24 +8,119 @@ import (
 
 	"github.com/spf13/pflag"
 
+	"github.com/tamnd/kvant-solver/corpus"
 	"github.com/tamnd/kvant-solver/fetch"
+	"github.com/tamnd/kvant-solver/manifest"
 	"github.com/tamnd/kvant-solver/ocr"
+	"github.com/tamnd/kvant-solver/publisher"
 	"github.com/tamnd/kvant-solver/queue"
 	"github.com/tamnd/kvant-solver/report"
 )
 
 func runReport(args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("report needs a subcommand, which is failures or cost")
+		return fmt.Errorf("report needs a subcommand, which is failures, cost or diff")
 	}
 	switch args[0] {
 	case "failures":
 		return runReportFailures(args[1:])
 	case "cost":
 		return runReportCost(args[1:])
+	case "diff":
+		return runReportDiff(args[1:])
 	default:
 		return fmt.Errorf("unknown report subcommand %q", args[0])
 	}
+}
+
+// runReportDiff writes reports/publisher-diff.md: how far the text the archive
+// carries agrees with the text we read off the same pages, per year.
+//
+// It reads what kvant publisher fetched and asks the site for nothing, so it
+// can be run again over the same sample and give the same answer, which is what
+// makes the rate a measurement rather than a reading of the day.
+func runReportDiff(args []string) error {
+	fs := pflag.NewFlagSet("report diff", pflag.ContinueOnError)
+	f := addFetchFlags(fs)
+	from := fs.Int("from", 0, "first year to compare")
+	to := fs.Int("to", 0, "last year to compare")
+	lang := fs.String("lang", corpus.DefaultLang, "the tree the articles were read into")
+	perYear := fs.Int("per-year", publisher.DefaultPerYear, "articles a year the sample was drawn at")
+	out := fs.String("out", "", "write here instead of corpus/reports/publisher-diff.md")
+	stdout := fs.Bool("stdout", false, "print the document instead of writing it")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+
+	c, err := corpus.Open(*f.root)
+	if err != nil {
+		return err
+	}
+	store, err := manifest.Open(*f.root)
+	if err != nil {
+		return err
+	}
+	toc := &manifest.TOC{}
+	if err := store.Read(manifest.TOCFile, toc); err != nil {
+		return err
+	}
+	issues, err := pickIssues(f, yearsBetween(*from, *to))
+	if err != nil {
+		return err
+	}
+	candidates, err := publisher.Candidates(c, *lang, toc, issues)
+	if err != nil {
+		return err
+	}
+	cache, err := fetch.OpenCache(*f.cache)
+	if err != nil {
+		return err
+	}
+	text := publisher.Store{Dir: filepath.Join(cache.Dir, "publisher")}
+
+	var diffs []publisher.Diff
+	for _, candidate := range publisher.Sample(candidates, *perYear) {
+		theirs, ok, err := text.Get(candidate.Issue, candidate.Slug)
+		if err != nil {
+			return err
+		}
+		if !ok {
+			// Not fetched is not a disagreement. Counting it as one would make
+			// the rate a report on how much of the sample has been downloaded.
+			continue
+		}
+		// Loaded rather than checked, because the comparison is about the words
+		// and a file whose hash has drifted is a different complaint that the
+		// audit already makes.
+		ours, err := corpus.LoadUnchecked(candidate.File, &corpus.ArticleFront{})
+		if err != nil {
+			return err
+		}
+		count, examples := publisher.Compare(theirs, ours)
+		diffs = append(diffs, publisher.Diff{
+			Issue: candidate.Issue, Year: candidate.Year,
+			Slug: candidate.Slug, Title: candidate.Title,
+			Count: count, Examples: examples,
+		})
+	}
+
+	md := report.DiffMarkdown(publisher.Years(diffs), diffs, *perYear, time.Now())
+	if *stdout {
+		fmt.Print(md)
+		return nil
+	}
+	path := *out
+	if path == "" {
+		if *f.root == "" {
+			return fmt.Errorf("no corpus, so nowhere to write, pass --corpus or --out")
+		}
+		path = filepath.Join(*f.root, "reports", "publisher-diff.md")
+	}
+	if err := writeReport(path, md); err != nil {
+		return err
+	}
+	fmt.Printf("%d articles compared, written to %s\n", len(diffs), path)
+	return nil
 }
 
 // runReportFailures writes reports/ocr-failures.md, which is the milestone's
