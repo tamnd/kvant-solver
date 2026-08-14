@@ -76,7 +76,12 @@ func runRepair(args []string) error {
 	if err != nil {
 		return err
 	}
+	// The job id goes with the sheet number. The queue names a job by a hash of
+	// its target and its prompt, so nothing downstream can work out which file
+	// to reset from a page number alone, and the list that found the dead pages
+	// is the one place that already knows.
 	todo := map[string][]int{}
+	dead := map[string]string{}
 	for _, fail := range failures {
 		if _, ok := wanted[fail.Issue]; !ok {
 			continue
@@ -85,6 +90,7 @@ func runRepair(args []string) error {
 			continue
 		}
 		todo[fail.Issue] = append(todo[fail.Issue], fail.Sheet)
+		dead[fail.Target] = fail.ID
 	}
 	if len(todo) == 0 {
 		fmt.Println("nothing dead in the range, so nothing to repair")
@@ -175,7 +181,7 @@ func runRepair(args []string) error {
 		// is left alone, which is revive's own rule and the right one: the corpus
 		// is what has to be complete, and re-reading a page that is already good
 		// spends the expensive lane on nothing.
-		revived, err := revive(jobs, runner, c, *lang, key, sheets)
+		revived, err := revive(jobs, runner, c, *lang, key, sheets, dead)
 		if err != nil {
 			return err
 		}
