@@ -22,6 +22,11 @@ import (
 
 // Failure is one page that ran out of attempts.
 type Failure struct {
+	// ID is the queue's own name for the job, which is a hash of the target and
+	// the prompt and not something a caller can work out. Repair needs it to put
+	// the page back, so the report that finds the page hands it over rather than
+	// making the next stage search a directory of every job ever run.
+	ID     string
 	Target string
 	Issue  string
 	Year   int
@@ -90,6 +95,7 @@ func Failures(jobs *queue.Queue) ([]Failure, error) {
 			continue
 		}
 		fail := Failure{
+			ID:       job.ID,
 			Target:   job.Target,
 			Issue:    id.Issue.String(),
 			Year:     id.Issue.Year,

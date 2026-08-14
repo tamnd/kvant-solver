@@ -136,7 +136,11 @@ func runOCR(args []string) error {
 		// named ones go back to pending here. Sheets that already have a page
 		// file are left alone, which is the same line Enqueue draws.
 		if len(*only) > 0 {
-			revived, err := revive(jobs, runner, c, *lang, key, sheets)
+			dead, err := deadIDs(jobs)
+			if err != nil {
+				return err
+			}
+			revived, err := revive(jobs, runner, c, *lang, key, sheets, dead)
 			if err != nil {
 				return err
 			}
@@ -246,22 +250,48 @@ func pick(sheets []ocr.Sheet, want []int) []ocr.Sheet {
 // the queue says about it, because the corpus is what has to be complete and
 // re-reading a page that is already good is a call spent to overwrite something
 // that was fine.
-func revive(jobs *queue.Queue, runner *ocr.Runner, c *corpus.Corpus, lang string, key corpus.IssueKey, sheets []ocr.Sheet) (int, error) {
+//
+// The dead map comes from deadIDs. A job is filed under a hash of its target
+// and its prompt, so the target alone does not name a file, and the first
+// version of this passed the target and quietly reset nothing: the run printed
+// its work list, moved zero pages and exited happy.
+func revive(jobs *queue.Queue, runner *ocr.Runner, c *corpus.Corpus, lang string, key corpus.IssueKey, sheets []ocr.Sheet, dead map[string]string) (int, error) {
 	moved := 0
 	for _, sheet := range sheets {
 		path := c.PagePath(lang, corpus.PageID{Issue: key, Index: sheet.Index})
 		if _, err := os.Stat(path); err == nil {
 			continue
 		}
-		ok, err := jobs.Reset(queue.StageOCR, runner.Target(sheet.Index))
+		id, ok := dead[runner.Target(sheet.Index)]
+		if !ok {
+			continue
+		}
+		reset, err := jobs.Reset(queue.StageOCR, id)
 		if err != nil {
 			return moved, err
 		}
-		if ok {
+		if reset {
 			moved++
 		}
 	}
 	return moved, nil
+}
+
+// deadIDs indexes the dead OCR jobs by the page they were reading.
+//
+// One pass over the directory for a whole run. The alternative is a search per
+// page, and the dead list is the small one only until a decade has been through
+// the queue.
+func deadIDs(jobs *queue.Queue) (map[string]string, error) {
+	list, err := jobs.List(queue.StageOCR, queue.Dead)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]string, len(list))
+	for _, job := range list {
+		out[job.Target] = job.ID
+	}
+	return out, nil
 }
 
 // scanSource names the archive the sheets came from, which goes into the
