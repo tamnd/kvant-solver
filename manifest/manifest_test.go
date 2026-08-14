@@ -264,9 +264,13 @@ func TestRubricsFoldSpellingVariants(t *testing.T) {
 
 func TestRubricSlugFoldsYo(t *testing.T) {
 	// The magazine writes ё when it feels like it. Two banners that differ only
-	// there are the same section.
-	if RubricSlug("Всё о шаре") != RubricSlug("Все о шаре") {
-		t.Error("ё and е came out as different rubrics")
+	// there are the same section, and the folding lives in the rubric package
+	// now so that a slug means the same thing in a manifest and in an article.
+	r := &Rubrics{}
+	r.Observe("Всё о шаре", 1991)
+	r.Observe("Все о шаре", 1992)
+	if len(r.Rubrics) != 1 {
+		t.Errorf("ё and е came out as %d rubrics", len(r.Rubrics))
 	}
 }
 

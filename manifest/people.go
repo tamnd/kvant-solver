@@ -4,6 +4,8 @@ import (
 	"cmp"
 	"slices"
 	"strings"
+
+	"github.com/tamnd/kvant-solver/rubric"
 )
 
 // Personalia is every named contributor. The magazine ran for fifty years and
@@ -77,6 +79,17 @@ type Rubric struct {
 	Slug  string `yaml:"slug"`
 	Count int    `yaml:"count"`
 
+	// Known says the section is in the taxonomy the rubric package pins. A
+	// rubric that is not is a section the magazine started and nobody has named
+	// yet, and it is worth seeing that in the file rather than finding it in an
+	// index six stages later.
+	Known bool `yaml:"known"`
+
+	// Group marks the archive's own contents buckets, Основные статьи and
+	// Разное, which are the two largest entries here and are not sections of
+	// the magazine at all.
+	Group bool `yaml:"group,omitempty"`
+
 	// First and Last are the years this rubric was seen in, which is how a
 	// rubric that ran for three years in the 1970s is told from one that ran
 	// throughout.
@@ -100,12 +113,14 @@ func (r *Rubrics) Observe(name string, year int) {
 	if name == "" {
 		return
 	}
-	slug := RubricSlug(name)
-	i := slices.IndexFunc(r.Rubrics, func(x Rubric) bool { return x.Slug == slug })
+	canon := rubric.Canonical(name)
+	i := slices.IndexFunc(r.Rubrics, func(x Rubric) bool { return x.Slug == canon.Slug })
 	if i < 0 {
 		r.Rubrics = append(r.Rubrics, Rubric{
 			Name:     name,
-			Slug:     slug,
+			Slug:     canon.Slug,
+			Known:    canon.Known,
+			Group:    canon.Group,
 			Count:    1,
 			First:    year,
 			Last:     year,
@@ -157,24 +172,4 @@ func (r *Rubrics) Sort() {
 		return cmp.Compare(a.Slug, b.Slug)
 	})
 	r.Count = len(r.Rubrics)
-}
-
-// RubricSlug folds a rubric banner to the form used to decide that two
-// spellings are the same section. It lower cases, drops the guillemets and the
-// ellipsis the magazine sets its section titles with, folds ё to е because the
-// magazine is inconsistent about it, and squeezes whitespace and hyphens.
-func RubricSlug(name string) string {
-	name = strings.ToLower(strings.TrimSpace(name))
-	name = strings.NewReplacer("ё", "е", "«", "", "»", "", "…", "", "—", " ", "–", " ").Replace(name)
-	name = strings.Map(func(r rune) rune {
-		switch {
-		case r >= 'а' && r <= 'я', r >= 'a' && r <= 'z', r >= '0' && r <= '9':
-			return r
-		case r == ' ' || r == '-' || r == '_':
-			return ' '
-		default:
-			return -1
-		}
-	}, name)
-	return strings.Join(strings.Fields(name), "-")
 }
