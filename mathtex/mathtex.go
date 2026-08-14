@@ -224,7 +224,7 @@ func Repair(body string) (string, int, []Refusal) {
 	for _, s := range spans {
 		b.WriteString(string(rs[at:s.Start]))
 		at = s.End
-		fixed, count, ref := repairSpan(rs[s.Start:s.End])
+		fixed, count, ref := repairSpan([]rune(number(string(rs[s.Start:s.End]), s.Display)))
 		for i := range ref {
 			ref[i].Line, ref[i].Span = s.Line, s.Text
 		}
@@ -235,6 +235,35 @@ func Repair(body string) (string, int, []Refusal) {
 	b.WriteString(string(rs[at:]))
 	return b.String(), n, refused
 }
+
+// number puts an equation number into the one command KaTeX knows.
+//
+// The magazine numbers a displayed equation in the right margin, usually (1) or
+// (*), and a model transcribing that reaches for \eqno, which is what plain TeX
+// calls it and what every textbook of the period was set in. KaTeX implements
+// none of plain TeX's numbering and stops at the undefined control sequence, so
+// a correct reading of a numbered equation fails the page. \tag is the same
+// thing in the dialect KaTeX does read.
+//
+// It works in a display and nowhere else, which is no loss: a numbered equation
+// is a displayed equation, and \eqno inside an inline span is a transcription
+// that has already gone wrong. Inline, the number goes back to what it looks
+// like on the page, which is the label standing after the formula.
+func number(span string, display bool) string {
+	return eqno.ReplaceAllStringFunc(span, func(match string) string {
+		label := strings.TrimSpace(eqno.FindStringSubmatch(match)[1])
+		label = strings.TrimSuffix(strings.TrimPrefix(label, "{"), "}")
+		if display {
+			return `\tag{` + label + `}`
+		}
+		return `\quad ` + label
+	})
+}
+
+// eqno is \eqno with its argument, braced or not. Plain TeX takes the next
+// group or the next token, and the magazine's numbers are short enough that
+// both spellings turn up in the same issue.
+var eqno = regexp.MustCompile(`\\eqno\s*(\{[^}]*\}|\S+)`)
 
 // DropStray takes out a $$ that opens mathematics, closes nothing, and stands
 // against the punctuation at the end of a sentence.
