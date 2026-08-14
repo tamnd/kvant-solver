@@ -105,6 +105,72 @@ func TestTheTableResolvesItsOwnTitles(t *testing.T) {
 	}
 }
 
+// The sections of 1990 to 2006. Every one of these stands over rows of the
+// contents of that period, and before this milestone every one of them
+// resolved as unknown, which is the audit saying the taxonomy stopped in 1989.
+func TestTheSectionsOfTheNineties(t *testing.T) {
+	cases := map[string]string{
+		"Школа в «Кванте»":                "shkola-v-kvante",
+		"Олимпиады":                       "olimpiady",
+		"Экзаменационные материалы":       "ekzamenatsionnye-materialy",
+		"Игры и головоломки":              "igry-i-golovolomki",
+		"Конкурс имени А. П. Савина":      "konkurs-imeni-a-p-savina",
+		"«Квант» улыбается":               "kvant-ulybaetsya",
+		"Нам пишут":                       "nam-pishut",
+		"О людях":                         "o-lyudyah",
+		"Математический мир":              "matematicheskiy-mir",
+		"Уголок коллекционера":            "ugolok-kollektsionera",
+		"По страницам школьных учебников": "po-stranitsam-shkolnyh-uchebnikov",
+	}
+	for printed, want := range cases {
+		got := rubric.Canonical(printed)
+		if got.Slug != want || !got.Known {
+			t.Errorf("%q resolved to %q (known %v), want %q", printed, got.Slug, got.Known, want)
+		}
+		if got.Group {
+			t.Errorf("%q came back as a contents bucket", printed)
+		}
+	}
+}
+
+// The renames. The archive's contents calls two sections by shorter names than
+// the banners the pages print, and they are one section each.
+func TestTheShortenedNamesAreTheSameSections(t *testing.T) {
+	for _, pair := range [][2]string{
+		{"Шахматы", "Шахматная страничка"},
+		{"Калейдоскоп", "Калейдоскоп «Кванта»"},
+		{"«Квант» для младших школьников", "Квант для младших школьников"},
+		{"Лаборатория", "Лаборатория «Кванта»"},
+	} {
+		short, long := rubric.Canonical(pair[0]), rubric.Canonical(pair[1])
+		if short.Slug != long.Slug {
+			t.Errorf("%q is %q and %q is %q, want one section", pair[0], short.Slug, pair[1], long.Slug)
+		}
+	}
+}
+
+// Основные статьи and Разное stand over about half the rows in the archive and
+// over no article the magazine ever printed. They are the site's own buckets,
+// and a section index that ranks them first is ranking a filing decision.
+func TestTheContentsBucketsAreNotSections(t *testing.T) {
+	for _, printed := range []string{"Основные статьи", "Разное", "Открывающие статьи"} {
+		got := rubric.Canonical(printed)
+		if !got.Group {
+			t.Errorf("%q came back as a section of the magazine", printed)
+		}
+		if !got.Known || got.Slug == "" {
+			t.Errorf("%q resolved to %+v, want a known bucket with a slug", printed, got)
+		}
+	}
+	// And they are not in the section table, which is what the index is built
+	// from.
+	for _, r := range rubric.All() {
+		if r.Slug == "raznoe" || r.Slug == "osnovnye-stati" {
+			t.Errorf("%q is in the section table", r.Title)
+		}
+	}
+}
+
 func TestAnEmptyBannerIsNothing(t *testing.T) {
 	if got := rubric.Canonical("   "); got.Slug != "" || got.Known {
 		t.Fatalf("blank resolved to %+v, want the zero rubric", got)

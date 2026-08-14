@@ -31,6 +31,9 @@ type Rubric struct {
 	// immediately; the flag is what the audit counts so that a section the
 	// magazine started in 1983 is noticed rather than accumulating quietly.
 	Known bool
+	// Group is true for a heading that sorts a contents page rather than
+	// standing over an article. See groups.
+	Group bool
 }
 
 // The table. These are the sections that carry across issues, which is what
@@ -93,6 +96,69 @@ var table = []struct {
 	{"smes", "Смесь", []string{
 		"смесь",
 	}},
+	// From here down are the sections of 1990 to 2006, which is where the
+	// magazine reorganised itself. Задачник and Практикум ran throughout, but
+	// Физический факультатив stops and comes back in 1996, Школа в «Кванте»
+	// takes over most of what the older teaching sections did, and four
+	// sections start that had no Soviet equivalent at all.
+	{"shkola-v-kvante", "Школа в «Кванте»", []string{
+		"школа в кванте",
+	}},
+	{"olimpiady", "Олимпиады", []string{
+		"олимпиады", "олимпиада",
+	}},
+	{"ekzamenatsionnye-materialy", "Экзаменационные материалы", []string{
+		"экзаменационные материалы", "варианты вступительных экзаменов",
+	}},
+	{"igry-i-golovolomki", "Игры и головоломки", []string{
+		"игры и головоломки",
+	}},
+	// Named for Анатолий Павлович Савин, who edited the magazine's mathematics
+	// and ran this competition for younger readers from 1990.
+	{"konkurs-imeni-a-p-savina", "Конкурс имени А. П. Савина", []string{
+		"конкурс имени а п савина", "конкурс имени а п савина математика 6 8",
+	}},
+	{"kvant-ulybaetsya", "«Квант» улыбается", []string{
+		"квант улыбается",
+	}},
+	{"nam-pishut", "Нам пишут", []string{
+		"нам пишут",
+	}},
+	{"o-lyudyah", "О людях", []string{
+		"о людях",
+	}},
+	{"matematicheskiy-mir", "Математический мир", []string{
+		"математический мир",
+	}},
+	{"ugolok-kollektsionera", "Уголок коллекционера", []string{
+		"уголок коллекционера",
+	}},
+	{"po-stranitsam-shkolnyh-uchebnikov", "По страницам школьных учебников", []string{
+		"по страницам школьных учебников",
+	}},
+}
+
+// groups are the two headings the archive's own contents sorts every item
+// under, and they are not sections of the magazine.
+//
+// Основные статьи and Разное stand over about half the rows of the whole
+// archive, from 1970 to now, and no issue of Kvant has ever printed either of
+// them over an article. They are the site's buckets: the pieces it treats as
+// the issue's articles, and everything else. Открывающие статьи is the same
+// thing for the piece that opens an issue.
+//
+// They resolve like any other heading, so a row carrying one still gets a
+// stable slug, and they come back with Group set so that the section index can
+// leave them out. Counting them as sections would put the two largest entries
+// in the taxonomy on things nobody ever printed.
+var groups = []struct {
+	slug    string
+	title   string
+	aliases []string
+}{
+	{"osnovnye-stati", "Основные статьи", []string{"основные статьи"}},
+	{"raznoe", "Разное", []string{"разное"}},
+	{"otkryvayushchie-stati", "Открывающие статьи", []string{"открывающие статьи"}},
 }
 
 // index is the aliases flattened, built once.
@@ -103,6 +169,13 @@ var index = func() map[string]Rubric {
 		m[key(row.title)] = known
 		for _, alias := range row.aliases {
 			m[key(alias)] = known
+		}
+	}
+	for _, row := range groups {
+		bucket := Rubric{Slug: row.slug, Title: row.title, Known: true, Group: true}
+		m[key(row.title)] = bucket
+		for _, alias := range row.aliases {
+			m[key(alias)] = bucket
 		}
 	}
 	return m
@@ -153,6 +226,11 @@ func key(printed string) string {
 	for _, r := range strings.ToLower(printed) {
 		switch {
 		case unicode.IsLetter(r) || unicode.IsDigit(r):
+			// ё folds to е. The magazine prints its own section titles both
+			// ways in the same year, and Всё and Все are not two sections.
+			if r == 'ё' {
+				r = 'е'
+			}
 			out.WriteRune(r)
 			space = false
 		case r == '­' || r == '​':
