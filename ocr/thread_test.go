@@ -2,6 +2,7 @@ package ocr
 
 import (
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -76,7 +77,7 @@ func TestAThreadIsWrittenWhereTheCorpusIsNot(t *testing.T) {
 	// account and the profile is a path in the home directory of a rented box,
 	// and neither belongs in a public repository.
 	path := ThreadPath(root, "alg-i-iii", 50)
-	if !strings.Contains(path, "/work/threads/") {
+	if !strings.Contains(filepath.ToSlash(path), "/work/threads/") {
 		t.Errorf("the record is at %s, which is not under work/", path)
 	}
 	got, err := ReadThread(root, "alg-i-iii", 50)

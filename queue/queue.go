@@ -227,11 +227,11 @@ func (q *Queue) temp(state State, job Job) (string, error) {
 	name := file.Name()
 	if _, err := file.Write(append(raw, '\n')); err != nil {
 		_ = file.Close()
-		_ = os.Remove(name)
+		_ = removeFile(name)
 		return "", err
 	}
 	if err := file.Close(); err != nil {
-		_ = os.Remove(name)
+		_ = removeFile(name)
 		return "", err
 	}
 	return name, os.Chmod(name, 0o644)
@@ -244,8 +244,8 @@ func (q *Queue) write(state State, job Job) error {
 	if err != nil {
 		return err
 	}
-	if err := os.Rename(name, q.path(job.Stage, state, job.ID)); err != nil {
-		_ = os.Remove(name)
+	if err := renameFile(name, q.path(job.Stage, state, job.ID)); err != nil {
+		_ = removeFile(name)
 		return err
 	}
 	return nil
@@ -262,8 +262,8 @@ func (q *Queue) create(state State, job Job) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	defer func() { _ = os.Remove(name) }()
-	err = os.Link(name, q.path(job.Stage, state, job.ID))
+	defer func() { _ = removeFile(name) }()
+	err = linkFile(name, q.path(job.Stage, state, job.ID))
 	if errors.Is(err, os.ErrExist) {
 		return false, nil
 	}
@@ -274,7 +274,7 @@ func (q *Queue) create(state State, job Job) (bool, error) {
 }
 
 func (q *Queue) read(state State, stage Stage, id string) (Job, error) {
-	raw, err := os.ReadFile(q.path(stage, state, id))
+	raw, err := readFile(q.path(stage, state, id))
 	if err != nil {
 		return Job{}, err
 	}
@@ -337,7 +337,7 @@ func (q *Queue) Lease(stage Stage, host, group string, expected time.Duration) (
 	}
 	for _, id := range ids {
 		from, to := q.path(stage, Pending, id), q.path(stage, Leased, id)
-		if err := os.Rename(from, to); err != nil {
+		if err := renameFile(from, to); err != nil {
 			// Any failure here means somebody else is having this one. It is
 			// ENOENT when they finished the rename first and a sharing violation
 			// when they are partway through it, and neither is this worker's
@@ -356,7 +356,7 @@ func (q *Queue) Lease(stage Stage, host, group string, expected time.Duration) (
 			// failure to put it back would strand the job in leased with no
 			// lease on it, and Reap treats that as expired and returns it to
 			// pending, so the job is never lost either way.
-			if err := os.Rename(to, from); err != nil {
+			if err := renameFile(to, from); err != nil {
 				return Job{}, err
 			}
 			continue
@@ -408,7 +408,7 @@ func (q *Queue) Finish(job Job, ok bool, reason string) (State, error) {
 	if err := q.write(state, job); err != nil {
 		return "", err
 	}
-	if err := os.Remove(q.path(job.Stage, Leased, job.ID)); err != nil && !os.IsNotExist(err) {
+	if err := removeFile(q.path(job.Stage, Leased, job.ID)); err != nil && !os.IsNotExist(err) {
 		return state, err
 	}
 	return state, nil
@@ -453,7 +453,7 @@ func (q *Queue) Release(job Job, reason string) error {
 	if err := q.write(Pending, job); err != nil {
 		return err
 	}
-	if err := os.Remove(q.path(job.Stage, Leased, job.ID)); err != nil && !os.IsNotExist(err) {
+	if err := removeFile(q.path(job.Stage, Leased, job.ID)); err != nil && !os.IsNotExist(err) {
 		return err
 	}
 	return nil
@@ -539,7 +539,7 @@ func (q *Queue) Retry(stage Stage, states ...State) (int, error) {
 			if err := q.write(Pending, job); err != nil {
 				return moved, err
 			}
-			if err := os.Remove(q.path(stage, state, id)); err != nil && !os.IsNotExist(err) {
+			if err := removeFile(q.path(stage, state, id)); err != nil && !os.IsNotExist(err) {
 				return moved, err
 			}
 			moved++
@@ -575,7 +575,7 @@ func (q *Queue) Reset(stage Stage, id string) (bool, error) {
 		if err := q.write(Pending, job); err != nil {
 			return false, err
 		}
-		if err := os.Remove(q.path(stage, state, id)); err != nil && !os.IsNotExist(err) {
+		if err := removeFile(q.path(stage, state, id)); err != nil && !os.IsNotExist(err) {
 			return false, err
 		}
 		return true, nil
@@ -592,7 +592,7 @@ func (q *Queue) Drain(stage Stage) (int, error) {
 		return 0, err
 	}
 	for _, id := range ids {
-		if err := os.Remove(q.path(stage, Pending, id)); err != nil && !os.IsNotExist(err) {
+		if err := removeFile(q.path(stage, Pending, id)); err != nil && !os.IsNotExist(err) {
 			return 0, err
 		}
 	}
