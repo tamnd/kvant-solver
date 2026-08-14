@@ -1,7 +1,8 @@
-# build output
+# build output. The leading slash matters: a bare kvant here would also ignore
+# cmd/kvant, which is the one directory that must never be ignored.
 /dist/
 /bin/
-kvant
+/kvant
 
 # working data, none of it belongs in git
 /work/
