@@ -1,0 +1,22 @@
+# build output
+/dist/
+/bin/
+kvant
+
+# working data, none of it belongs in git
+/work/
+/pdf/
+/images/
+/scans/
+*.duckdb
+*.duckdb.wal
+
+# local config and secrets
+.env
+routes.json
+*.pem
+
+# editors and OS
+.DS_Store
+.idea/
+.vscode/
