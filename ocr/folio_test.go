@@ -163,6 +163,11 @@ func TestParseFolioTakesThePageNumberAndNotTheYear(t *testing.T) {
 		{"2* 19", 19, true},
 		{"2*\n19", 19, true},
 		{"2 * 19", 19, true},
+		// The card does not always transcribe the asterisk, so the number that
+		// wins is the larger one, which on a page carrying a signature is always
+		// the folio.
+		{"2 19", 19, true},
+		{"19 2", 19, true},
 		// A signature with nothing else in the band is a page whose number did
 		// not make it into the crop, and no answer is the honest one. Returning
 		// the signature would place the page nineteen leaves from where it was

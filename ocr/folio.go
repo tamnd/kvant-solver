@@ -217,19 +217,28 @@ var digits = regexp.MustCompile(`\d+`)
 
 // signature is the printer's mark, which is a small number with an asterisk
 // after it at the inner corner of the first page of a gathering.
-//
-// It has to be thrown away before anything else is read, and it cost real pages
-// to find out. Sheet 21 of both 1975 №2 and №3 is printed page 19, and both
-// came back as 2, because the foot of that page carries 2* at the left and 19
-// at the right and the band is the whole width. Every issue of the run is set
-// the same way, so this is one wrong page per gathering per issue, which over
-// twenty years is thousands of pages rejected by the folio rule for a number
-// that was never the page number.
 var signature = regexp.MustCompile(`\d+\s*\*`)
 
 // ParseFolio picks the printed number out of what came back from the band.
+//
+// The band is the full width of the page, so it can hold two numbers, and which
+// one is the folio is not a matter of reading order. Sheet 21 of 1975 №2 and
+// sheet 21 of №3 are both printed page 19. Both really do print 19, at the
+// outer corner, and both also print 2* at the inner corner, which is the
+// printer's signature: the number of the gathering. Taking the first number
+// read took the signature on every such page, and every issue of the run is set
+// this way, so it was one wrong page per gathering per issue.
+//
+// The asterisk is dropped first, for the answers that carry it, and then the
+// largest plausible number wins rather than the first. That is not a guess
+// about which corner the model read from, it is arithmetic about how a magazine
+// is bound: gathering n opens at page 16n-15 or thereabouts, so the folio on a
+// page carrying a signature is always the larger of the two by an order that
+// grows through the issue. It also leaves the colophon case alone, where the
+// year is already excluded for being over 128.
 func ParseFolio(answer string) (int, bool) {
 	answer = signature.ReplaceAllString(answer, " ")
+	best, found := 0, false
 	for _, match := range digits.FindAllString(answer, -1) {
 		number, err := strconv.Atoi(match)
 		if err != nil {
@@ -238,9 +247,12 @@ func ParseFolio(answer string) (int, bool) {
 		// The magazine ran to 80 pages and never past 128, and a year is four
 		// digits, so anything above this is a date or a problem number that
 		// found its way into the band.
-		if number >= 1 && number <= 128 {
-			return number, true
+		if number >= 1 && number <= 128 && number > best {
+			best, found = number, true
 		}
+	}
+	if found {
+		return best, true
 	}
 	return asLetters(answer)
 }
