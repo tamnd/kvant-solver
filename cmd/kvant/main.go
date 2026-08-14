@@ -37,9 +37,12 @@ func main() {
 
 func run(args []string) error {
 	commands := []command{
+		{"assemble", "assemble --issue K", "build articles out of the pages", runAssemble},
+		{"audit", "audit --issue K", "say whether an issue is finished", runAudit},
 		{"corpus", "corpus validate [--corpus DIR]", "check a corpus checkout", runCorpus},
 		{"fetch", "fetch pages|pdf [--year Y]", "download the scans and the issue PDFs", runFetch},
 		{"issues", "issues sync|list [--deep]", "build and print the issue list", runIssues},
+		{"ocr", "ocr --issue K [--workers N]", "read the pages of an issue through a model", runOCR},
 		{"people", "people sync", "build the contributor list", runPeople},
 		{"sources", "sources probe", "report what each source holds per year", runSources},
 		{"textguard", "textguard --all|--year Y", "decide how each page is read and price it", runTextguard},

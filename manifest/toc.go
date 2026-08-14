@@ -34,6 +34,12 @@ type Row struct {
 
 	// Page is the number printed on the page. Sheet is where that page sits in
 	// the scan. They differ because the covers are scanned and not numbered.
+	//
+	// Sheet is the mirror's own numbering, taken out of the viewer URL, and the
+	// mirror counts its images from zero. A page file is numbered from one. Add
+	// one to cross between them, and do not do it by eye: the two agree closely
+	// enough that a run with the conversion missing looks nearly right and is
+	// wrong by one page everywhere.
 	Page  int `yaml:"page,omitempty"`
 	Sheet int `yaml:"sheet,omitempty"`
 
