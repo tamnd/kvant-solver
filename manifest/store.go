@@ -46,7 +46,13 @@ func Open(corpusRoot string) (*Store, error) {
 	if err != nil {
 		return nil, err
 	}
-	dir := filepath.Join(abs, "manifests")
+	return At(filepath.Join(abs, "manifests"))
+}
+
+// At points at any directory of YAML files written the way this package writes
+// them. The page manifests the fetch stage keeps live in a cache rather than in
+// a corpus, and they want the same atomic write and the same strict read.
+func At(dir string) (*Store, error) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, err
 	}

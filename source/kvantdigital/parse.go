@@ -6,6 +6,7 @@ import (
 	"io"
 	"strconv"
 	"strings"
+	"unicode"
 
 	"github.com/PuerkitoBio/goquery"
 )
@@ -153,20 +154,23 @@ func ParseIssue(r io.Reader, year int, number string) (*Issue, error) {
 		}
 		seen[slug] = true
 
-		// The authors sit in an em inside the link, ahead of the title.
+		// The authors sit in an em inside the link, ahead of the title. Only
+		// that one em comes out. Taking every em looked right for eleven
+		// thousand rows and was wrong for the one whose title is set in italic
+		// mathematics: 1983 no. 10 has an article called n^x = x^n, and
+		// removing all the ems left the title as "=" and the author as
+		// "Печерский Л. Б." with the maths stuck on the end of it.
 		text := link.Clone()
-		authors := clean(text.Find("em").Text())
-		text.Find("em").Remove()
+		authors := takeAuthors(text)
+		markScripts(text)
 
 		row := TOCRow{
 			Rubric:    rubric,
 			RubricSub: sub,
 			Title:     clean(text.Text()),
-			// Trailing commas go, trailing full stops stay: the last character
-			// of "Бронштейн И. Н." belongs to the initial.
-			Authors: strings.TrimRight(authors, " ,"),
-			Slug:    slug,
-			URL:     href,
+			Authors:   authors,
+			Slug:      slug,
+			URL:       href,
 		}
 		if item.HasClass("toc--lev--1") {
 			row.RubricSub = rubric
@@ -193,6 +197,41 @@ func ParseIssue(r io.Reader, year int, number string) (*Issue, error) {
 		return nil, fmt.Errorf("%s: no contents rows, the markup has probably moved", key)
 	}
 	return iss, nil
+}
+
+// takeAuthors pulls the author em out of a contents link and removes it, so
+// that what is left is the title. It returns an empty string for a row printed
+// without an author, and it leaves the link alone in that case.
+//
+// The test is that the em comes first and is Cyrillic. Coming first is not
+// enough on its own: a title that opens with an italic variable also has its
+// first em at the head of the link, and the magazine sets its mathematics in
+// Latin letters and its authors in Russian ones.
+func takeAuthors(link *goquery.Selection) string {
+	em := link.Find("em").First()
+	if em.Length() == 0 {
+		return ""
+	}
+	authors := clean(em.Text())
+	if authors == "" || !hasCyrillic(authors) || !strings.HasPrefix(clean(link.Text()), authors) {
+		return ""
+	}
+	em.Remove()
+	// Trailing commas go, trailing full stops stay: the last character of
+	// "Бронштейн И. Н." belongs to the initial.
+	return strings.TrimRight(authors, " ,")
+}
+
+func hasCyrillic(s string) bool {
+	return strings.ContainsFunc(s, func(r rune) bool { return unicode.Is(unicode.Cyrillic, r) })
+}
+
+// markScripts writes superscripts and subscripts the way a reader would, so
+// that a title printed as n^x = x^n survives being flattened into one string
+// rather than arriving as "n x = x n".
+func markScripts(s *goquery.Selection) {
+	s.Find("sup").Each(func(_ int, e *goquery.Selection) { e.SetText("^" + e.Text()) })
+	s.Find("sub").Each(func(_ int, e *goquery.Selection) { e.SetText("_" + e.Text()) })
 }
 
 // readLinkedData pulls the description and the ISSN out of the JSON-LD block.

@@ -44,6 +44,7 @@ export KVANT_CORPUS=$HOME/github/tamnd/kvant
 kvant sources probe
 kvant issues sync
 kvant fetch pages --issue kvant_1975_1
+kvant fetch pdf --year 2007
 kvant textguard --year 1975
 kvant ocr run --year 1975 --workers 8
 kvant assemble --issue kvant_1975_1
@@ -51,6 +52,8 @@ kvant audit
 ```
 
 `kvant --help` lists the rest.
+
+The scans are tens of gigabytes of JPEG and they do not belong in a repo of text, so they land in a cache outside the checkout: `--cache`, or `KVANT_CACHE`, or the user cache directory. A sheet whose bytes are already there is not asked for again, so a run that broke on issue nine picks up where it stopped.
 
 ## Layout
 
@@ -76,7 +79,7 @@ publish       the static site, built from committed Markdown
 
 ## Politeness
 
-The archive is hosted by a mathematics education charity. The crawler runs one request at a time per host with a real delay, honours `robots.txt` including `Clean-param`, sends an honest user agent, and stops on 429 or 403 instead of retrying. If a stage needs to run faster the answer is to ask, not to add workers.
+The archive is hosted by a mathematics education charity. The crawler runs one request at a time per host with a real delay, honours `robots.txt` including `Clean-param`, and sends an honest user agent. A transfer that broke halfway is asked for again after a growing wait, because a fifty year sweep meets a reset that means nothing at all. A 403, a 429 or a 404 is never asked again: those are answers and not accidents. If a stage needs to run faster the answer is to ask, not to add workers.
 
 ## Licence
 
