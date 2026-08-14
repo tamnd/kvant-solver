@@ -1,6 +1,6 @@
 # Build from source. The release image is Dockerfile.release, which takes a
 # binary goreleaser has already built.
-FROM golang:1.26.5-alpine AS build
+FROM golang:1.27rc2-alpine AS build
 
 WORKDIR /src
 RUN apk add --no-cache git
