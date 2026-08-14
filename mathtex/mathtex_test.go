@@ -419,6 +419,49 @@ func TestUnstraddleMovesOnlyDelimiters(t *testing.T) {
 	}
 }
 
+// The magazine numbers a displayed equation in the right margin and a model
+// transcribing that reaches for plain TeX's \eqno, which KaTeX does not
+// implement, so a correct reading of a numbered equation failed the page.
+func TestAnEquationNumber(t *testing.T) {
+	cases := []struct {
+		name string
+		body string
+		want string
+	}{
+		{
+			"a braced number in a display",
+			"$$E = mc^2 \\eqno{(*)}$$",
+			`$$E = mc^2 \tag{(*)}$$`,
+		},
+		{
+			// Plain TeX takes the next token when there is no group, and the
+			// magazine's numbers are short enough that both spellings turn up.
+			"a bare number in a display",
+			"$$E = mc^2 \\eqno(1)$$",
+			`$$E = mc^2 \tag{(1)}$$`,
+		},
+		{
+			// \tag is a display command, and an equation number inline is a
+			// transcription that has already gone wrong, so it goes back to
+			// what the page looks like instead.
+			"a number in an inline span",
+			"we had $x = 1 \\eqno{(2)}$ there",
+			`we had $x = 1 \quad (2)$ there`,
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got, _, refused := Repair(c.body)
+			if got != c.want {
+				t.Errorf("got %q, want %q", got, c.want)
+			}
+			if len(refused) > 0 {
+				t.Errorf("refused %v, want the number rewritten and nothing said", refused)
+			}
+		})
+	}
+}
+
 // Both repairs run over every page and most pages need neither, so the one
 // thing they must never do is come back with a body that is not the one they
 // were given.
