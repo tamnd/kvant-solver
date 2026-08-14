@@ -28,6 +28,11 @@ const DefaultDelay = time.Second
 // we did not mean to download.
 const MaxBody = 32 << 20
 
+// MaxDownload caps a streamed file. A page scan is half a megabyte and the
+// largest full issue PDF on the mirror is under sixty, so this is a backstop
+// against a server handing us something endless rather than a real limit.
+const MaxDownload = 256 << 20
+
 // Sentinel errors. The first two mean stop, not retry. A crawler that retries
 // through a 429 is the reason hosts start blocking whole subnets.
 var (
@@ -52,7 +57,14 @@ type Response struct {
 	RequestedURL string
 	FinalURL     string
 	Status       int
-	Body         []byte
+
+	// ContentType is what the server said it was sending. The page sweep
+	// leans on it: a request for a sheet past the end of an issue is answered
+	// with an HTML error page rather than a 404, and text/html where a JPEG
+	// was asked for is the plainest possible way to notice that.
+	ContentType string
+
+	Body []byte
 }
 
 // Redirected reports whether the server sent us somewhere else. This matters
@@ -147,7 +159,58 @@ func (c *Client) Head(ctx context.Context, rawURL string) (*Response, error) {
 	return c.do(ctx, http.MethodHead, rawURL, true)
 }
 
+// Download streams a URL into w rather than into memory. It is the same
+// request Get makes, with the same manners in front of it, and it exists
+// because a page scan is half a megabyte and a full issue PDF is thirty, and
+// reading either into a byte slice on the way to a file is a waste of both
+// sides of the connection.
+//
+// The response it returns has no body. What the caller wants from it is the
+// final URL, because a request for a sheet past the end of an issue answers
+// with a redirect to an error page rather than a 404, and that redirect is how
+// the page sweep learns it has reached the end.
+func (c *Client) Download(ctx context.Context, rawURL string, w io.Writer) (*Response, int64, error) {
+	resp, err := c.open(ctx, http.MethodGet, rawURL, true)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	n, err := io.Copy(w, io.LimitReader(resp.Body, MaxDownload))
+	if err != nil {
+		return nil, n, fmt.Errorf("%s: %w", rawURL, err)
+	}
+	return &Response{
+		RequestedURL: rawURL,
+		FinalURL:     resp.Request.URL.String(),
+		Status:       resp.StatusCode,
+		ContentType:  resp.Header.Get("Content-Type"),
+	}, n, nil
+}
+
 func (c *Client) do(ctx context.Context, method, rawURL string, checkRobots bool) (*Response, error) {
+	resp, err := c.open(ctx, method, rawURL, checkRobots)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	body, err := io.ReadAll(io.LimitReader(resp.Body, MaxBody))
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", rawURL, err)
+	}
+	return &Response{
+		RequestedURL: rawURL,
+		FinalURL:     resp.Request.URL.String(),
+		Status:       resp.StatusCode,
+		ContentType:  resp.Header.Get("Content-Type"),
+		Body:         body,
+	}, nil
+}
+
+// open makes the request and hands back a live response with the status
+// already judged. The caller closes the body.
+func (c *Client) open(ctx context.Context, method, rawURL string, checkRobots bool) (*http.Response, error) {
 	u, err := url.Parse(rawURL)
 	if err != nil {
 		return nil, err
@@ -177,30 +240,30 @@ func (c *Client) do(ctx context.Context, method, rawURL string, checkRobots bool
 	if err != nil {
 		return nil, err
 	}
-	defer func() { _ = resp.Body.Close() }()
 
-	switch resp.StatusCode {
+	// A status we are not going on with closes the body here, because the
+	// caller only closes what it is handed and it is handed nothing.
+	if err := judge(rawURL, resp.StatusCode); err != nil {
+		_ = resp.Body.Close()
+		return nil, err
+	}
+	return resp, nil
+}
+
+// judge turns a status into the error that says what to do about it.
+func judge(rawURL string, status int) error {
+	switch status {
 	case http.StatusTooManyRequests:
-		return nil, fmt.Errorf("%s: %w", rawURL, ErrRateLimited)
+		return fmt.Errorf("%s: %w", rawURL, ErrRateLimited)
 	case http.StatusForbidden:
-		return nil, fmt.Errorf("%s: %w", rawURL, ErrForbidden)
+		return fmt.Errorf("%s: %w", rawURL, ErrForbidden)
 	case http.StatusNotFound, http.StatusGone:
-		return nil, fmt.Errorf("%s: %w", rawURL, ErrNotFound)
+		return fmt.Errorf("%s: %w", rawURL, ErrNotFound)
 	}
-	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		return nil, &StatusError{URL: rawURL, Status: resp.StatusCode}
+	if status < 200 || status > 299 {
+		return &StatusError{URL: rawURL, Status: status}
 	}
-
-	body, err := io.ReadAll(io.LimitReader(resp.Body, MaxBody))
-	if err != nil {
-		return nil, fmt.Errorf("%s: %w", rawURL, err)
-	}
-	return &Response{
-		RequestedURL: rawURL,
-		FinalURL:     resp.Request.URL.String(),
-		Status:       resp.StatusCode,
-		Body:         body,
-	}, nil
+	return nil
 }
 
 // wait holds the host lock for the whole gap, so two goroutines aiming at the

@@ -38,9 +38,11 @@ func main() {
 func run(args []string) error {
 	commands := []command{
 		{"corpus", "corpus validate [--corpus DIR]", "check a corpus checkout", runCorpus},
+		{"fetch", "fetch pages|pdf [--year Y]", "download the scans and the issue PDFs", runFetch},
 		{"issues", "issues sync|list [--deep]", "build and print the issue list", runIssues},
 		{"people", "people sync", "build the contributor list", runPeople},
 		{"sources", "sources probe", "report what each source holds per year", runSources},
+		{"textguard", "textguard --all|--year Y", "decide how each page is read and price it", runTextguard},
 		{"version", "version", "print the version", runVersion},
 	}
 	if len(args) == 0 || args[0] == "help" || args[0] == "-h" || args[0] == "--help" {
@@ -68,6 +70,7 @@ func usage(commands []command) {
 	}
 	fmt.Println()
 	fmt.Println("The corpus path comes from --corpus or from KVANT_CORPUS.")
+	fmt.Println("The downloaded scans live outside the corpus, under --cache or KVANT_CACHE.")
 }
 
 func runVersion([]string) error {

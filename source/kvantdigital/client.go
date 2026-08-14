@@ -47,6 +47,22 @@ func (c *Client) Issue(ctx context.Context, year int, number string) (*Issue, er
 	return iss, nil
 }
 
+// Article returns one item of a table of contents as its own page. The URL is
+// the one the contents row gave, because a slug is not derivable from a title
+// and building one would be a guess.
+func (c *Client) Article(ctx context.Context, u, slug string) (*Article, error) {
+	resp, err := c.Fetcher.Get(ctx, u)
+	if err != nil {
+		return nil, err
+	}
+	a, err := ParseArticle(bytes.NewReader(resp.Body), slug)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", u, err)
+	}
+	a.URL = u
+	return a, nil
+}
+
 // Personalia returns every named contributor. The index paginates, and the
 // first page says how many there are, so this is one request to find out and
 // then one per remaining page.

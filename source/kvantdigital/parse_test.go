@@ -222,3 +222,53 @@ func TestSlugExtraction(t *testing.T) {
 		t.Errorf("PersonSlug: %q", got)
 	}
 }
+
+// TestAnItalicTitleStaysATitle is the row that taught this parser the
+// difference between an author and a variable. 1983 no. 10 has an article
+// called n^x = x^n, set the way the magazine sets mathematics, and a parser
+// that pulls every em out of the link as the author is left with the title "="
+// and an author with the maths glued onto the end of it.
+func TestAnItalicTitleStaysATitle(t *testing.T) {
+	const page = `<html><body><ul class="object--toc">
+<li><div class="toc--item toc--lev--1"><div class="toc--title">
+<a href="//www.kvant.digital/issues/1983/10/pecherskiy-nx_xn-0b008072/">
+<span><em>Печерский&nbsp;Л.&nbsp;Б.</em> <em>n</em><sup><em>x</em></sup> = <em>x</em><sup><em>n</em></sup></span></a>
+</div><span class="toc--page"><a href="//www.kvant.digital/view/kvant_1983_10/p32/">31</a></span></div></li>
+</ul></body></html>`
+
+	iss, err := ParseIssue(strings.NewReader(page), 1983, "10")
+	if err != nil {
+		t.Fatal(err)
+	}
+	row := iss.Rows[0]
+	if row.Authors != "Печерский Л. Б." {
+		t.Errorf("authors are %q", row.Authors)
+	}
+	if row.Title != "n^x = x^n" {
+		t.Errorf("title is %q", row.Title)
+	}
+}
+
+// TestATitleThatOpensWithAVariable is the other half of it. Nothing says a row
+// has an author, and a row whose title starts in italics must not have the
+// first word of the title taken for one.
+func TestATitleThatOpensWithAVariable(t *testing.T) {
+	const page = `<html><body><ul class="object--toc">
+<li><div class="toc--item toc--lev--1"><div class="toc--title">
+<a href="//www.kvant.digital/issues/1975/1/x_i_y-0b008072/">
+<span><em>x</em> и <em>y</em></span></a>
+</div><span class="toc--page"><a href="//www.kvant.digital/view/kvant_1975_1/p10/">9</a></span></div></li>
+</ul></body></html>`
+
+	iss, err := ParseIssue(strings.NewReader(page), 1975, "1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	row := iss.Rows[0]
+	if row.Authors != "" {
+		t.Errorf("authors are %q, the row is printed without one", row.Authors)
+	}
+	if row.Title != "x и y" {
+		t.Errorf("title is %q", row.Title)
+	}
+}
