@@ -106,6 +106,29 @@ func (r *Runner) Target(index int) string {
 	return corpus.PageID{Issue: r.Issue, Index: index}.String()
 }
 
+// Meta is what a job for this sheet has to carry.
+//
+// It is exported because a job is written in two places: here, when a sheet is
+// first queued, and again when a dead page is revived for the repair lane. The
+// second one is the reason it is a method rather than four lines inside
+// Enqueue. A revived job keeps its id, because the work is the same work, but
+// it must not keep the image path it was written with: the run that revives it
+// has staged the sheet itself, possibly under a different cache root or on a
+// different machine, and the old path is a file that is not there.
+func (r *Runner) Meta(sheet Sheet) map[string]string {
+	meta := map[string]string{
+		"image": sheet.Image,
+		"sheet": strconv.Itoa(sheet.Index),
+	}
+	if sheet.Expect.Folio > 0 {
+		meta["folio"] = strconv.Itoa(sheet.Expect.Folio)
+	}
+	if sheet.Expect.Cover {
+		meta["cover"] = "yes"
+	}
+	return meta
+}
+
 // Enqueue adds a job for every sheet that has no page file yet.
 //
 // Already read is decided by the corpus and not by the queue, because the
@@ -127,16 +150,7 @@ func (r *Runner) Enqueue(sheets []Sheet) (int, error) {
 			return added, err
 		}
 		job := queue.New(queue.StageOCR, r.Target(sheet.Index), hash, r.PromptSHA256)
-		job.Meta = map[string]string{
-			"image": sheet.Image,
-			"sheet": strconv.Itoa(sheet.Index),
-		}
-		if sheet.Expect.Folio > 0 {
-			job.Meta["folio"] = strconv.Itoa(sheet.Expect.Folio)
-		}
-		if sheet.Expect.Cover {
-			job.Meta["cover"] = "yes"
-		}
+		job.Meta = r.Meta(sheet)
 		ok, err := r.Queue.Add(job)
 		if err != nil {
 			return added, err
@@ -167,12 +181,26 @@ func (r *Runner) Run(ctx context.Context) (Summary, error) {
 		mu      sync.Mutex
 		summary Summary
 		failed  error
+		// released remembers the pages this run handed back because their image
+		// was not readable. Releasing is right, see one below, but it puts the job
+		// straight back on pending where the next lease picks it up again, and if
+		// the file is missing rather than briefly away that is a loop with nothing
+		// in it but the CPU. Seeing the same page twice is the run finding out that
+		// the machine is wrong and not the page.
+		released = map[string]bool{}
+		halt     bool
 	)
 	var wait sync.WaitGroup
 	for range max(1, r.Workers) {
 		wait.Go(func() {
 			for {
 				if ctx.Err() != nil {
+					return
+				}
+				mu.Lock()
+				stop := halt
+				mu.Unlock()
+				if stop {
 					return
 				}
 				job, err := r.Queue.Lease(queue.StageOCR, r.host(), "", r.lease())
@@ -191,6 +219,15 @@ func (r *Runner) Run(ctx context.Context) (Summary, error) {
 				case err != nil:
 					summary.Failed++
 					r.log("%s: %v", job.Target, err)
+					if state == queue.Pending {
+						if released[job.Target] {
+							halt = true
+							failed = errors.Join(failed, fmt.Errorf(
+								"%s: the page image was not readable twice, so it is gone rather than late and the run is stopping, check that the cache holds the staged sheets",
+								job.Target))
+						}
+						released[job.Target] = true
+					}
 				case len(problems) > 0:
 					summary.Rejected++
 					if state == queue.Dead {

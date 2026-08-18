@@ -31,6 +31,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -573,6 +574,23 @@ func (q *Queue) Retry(stage Stage, states ...State) (int, error) {
 // worker while the first is still holding it, and the lease is there to expire
 // on its own.
 func (q *Queue) Reset(stage Stage, id string) (bool, error) {
+	return q.Restage(stage, id, nil)
+}
+
+// Restage is Reset with the meta the job should be run with now.
+//
+// Meta is where a job keeps the things that are true of this machine rather
+// than of the work: which file the page image is staged at, most of all. That
+// path was right when the job was written and it is not right after the cache
+// has been moved, or copied to another host, or staged under a different root,
+// and all three of those are normal. The work is the same work, the id says so,
+// and only the directions to it have changed.
+//
+// A nil meta keeps what the job already has, which is what Reset wants. A meta
+// that is given replaces it outright rather than merging, because the caller
+// has just built the job it wants run and a leftover key from the last host is
+// not something it asked for.
+func (q *Queue) Restage(stage Stage, id string, meta map[string]string) (bool, error) {
 	for _, state := range []State{Done, Failed, Dead} {
 		job, err := q.read(state, stage, id)
 		if os.IsNotExist(err) {
@@ -582,6 +600,9 @@ func (q *Queue) Reset(stage Stage, id string) (bool, error) {
 			return false, err
 		}
 		job.Attempts, job.Lease = 0, nil
+		if meta != nil {
+			job.Meta = maps.Clone(meta)
+		}
 		if err := q.write(Pending, job); err != nil {
 			return false, err
 		}

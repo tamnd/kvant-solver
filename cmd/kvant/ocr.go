@@ -266,7 +266,7 @@ func revive(jobs *queue.Queue, runner *ocr.Runner, c *corpus.Corpus, lang string
 		if !ok {
 			continue
 		}
-		reset, err := jobs.Reset(queue.StageOCR, id)
+		reset, err := jobs.Restage(queue.StageOCR, id, runner.Meta(sheet))
 		if err != nil {
 			return moved, err
 		}

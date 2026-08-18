@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/tamnd/kvant-solver/corpus"
 	"github.com/tamnd/kvant-solver/ocr"
@@ -356,4 +357,97 @@ func sheetOf(image string) int {
 	var n int
 	fmt.Sscanf(strings.TrimSuffix(image, filepath.Ext(image)), "%d", &n)
 	return n
+}
+
+// A missing image used to be a run that never ended.
+//
+// Releasing a page whose image is not readable is right, because the job is
+// fine and the machine is not, but a released job goes straight back to pending
+// and the next lease picks it up again. When the file is gone rather than
+// briefly away, that is a loop with nothing in it. It burned four cores for
+// eleven minutes on a real cache that had been moved, and printed nothing,
+// because every line of the spin was a log line nobody was reading yet.
+func TestAMissingImageStopsTheRunInsteadOfSpinning(t *testing.T) {
+	runner, eng, images := setup(t, func(image string, _ int) string {
+		return page(sheetOf(image))
+	})
+	if _, err := runner.Enqueue(sheets(t, images)); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(filepath.Join(images, "0002.jpg")); err != nil {
+		t.Fatal(err)
+	}
+
+	done := make(chan error, 1)
+	var summary ocr.Summary
+	go func() {
+		var err error
+		summary, err = runner.Run(context.Background())
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Fatal("the run said nothing was wrong, want it to name the unreadable page")
+		}
+		if !strings.Contains(err.Error(), "kvant_1975_1_p0002") {
+			t.Fatalf("the run stopped with %v, want the page named", err)
+		}
+	case <-time.After(30 * time.Second):
+		t.Fatal("the run did not finish, it is spinning on the missing image")
+	}
+	// The other two pages are still the point of the run. Stopping is what the
+	// run does once it knows the sheet is gone, not the first thing it does.
+	if eng.count("0001.jpg") == 0 && eng.count("0003.jpg") == 0 {
+		t.Fatal("nothing else was read, want the readable pages read before the run gave up")
+	}
+	if summary.Failed == 0 {
+		t.Fatalf("got %s, want the release counted", summary)
+	}
+}
+
+// A dead page revived for the repair lane keeps its id and drops the path it
+// was written with. The id is the work, which has not changed. The path is
+// where this machine has the sheet, which is exactly what changes when a cache
+// is moved or a run picks up on another host.
+func TestARevivedJobIsPointedAtTheSheetThisMachineHas(t *testing.T) {
+	runner, _, images := setup(t, func(string, int) string { return "too short" })
+	if _, err := runner.Enqueue(sheets(t, images)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runner.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	dead, err := runner.Queue.List(queue.StageOCR, queue.Dead)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(dead) == 0 {
+		t.Fatal("nothing died, the rest of this test has nothing to revive")
+	}
+
+	moved := t.TempDir()
+	for _, sheet := range sheets(t, images) {
+		if sheet.Index != 1 {
+			continue
+		}
+		sheet.Image = filepath.Join(moved, "0001.jpg")
+		ok, err := runner.Queue.Restage(queue.StageOCR, dead[0].ID, runner.Meta(sheet))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !ok {
+			t.Fatalf("job %s did not come back to pending", dead[0].ID)
+		}
+	}
+	back, _, err := runner.Queue.Find(queue.StageOCR, dead[0].ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := back.Meta["image"]; got != filepath.Join(moved, "0001.jpg") {
+		t.Fatalf("the revived job still reads %s, want the sheet where it is now", got)
+	}
+	if back.Attempts != 0 {
+		t.Fatalf("the revived job carries %d attempts, want a clean three", back.Attempts)
+	}
 }
