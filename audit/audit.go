@@ -16,10 +16,13 @@ package audit
 import (
 	"fmt"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"sort"
 	"strconv"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/tamnd/kvant-solver/corpus"
 	"github.com/tamnd/kvant-solver/lexicon"
@@ -248,6 +251,33 @@ func pages(report *Report, in Input) {
 			report.add(Warn, "mixed_script", where,
 				fmt.Sprintf("%d words mix two alphabets and are not Russian spelled in two of them, such as %q", n, first))
 		}
+		// A page cannot name a year its issue had not reached yet.
+		//
+		// This is the only rule here that trusts nothing written alongside the
+		// page. Everything else compares the body against the front matter, or
+		// the front matter against the manifest, and both of those are written
+		// by the lane that read the page. When that lane filed a page under the
+		// wrong issue it wrote the path and the front matter from the same
+		// wrong value, so the two agreed with each other and wrong_issue above
+		// saw nothing at all. 233 pages of one issue sat in another issue's
+		// directory for a day and the audit passed them every time. The date
+		// printed on the page is the one thing the lane cannot get wrong,
+		// because it did not write it.
+		//
+		// One year ahead is normal: an issue dated December prints next year's
+		// subscription dates and olympiad dates. The next century is normal too,
+		// which is why only the twentieth is counted, because a magazine writing
+		// about the year 2000 is looking forward rather than misfiled.
+		//
+		// A warning and not a failure, on the measured rate. Over the Soviet
+		// decades 14 percent of the misfiled pages trip this against 0.43
+		// percent of everything else, and that 0.43 percent is real: it is the
+		// rate at which an issue announces a competition or a five year plan.
+		// The signal is the gap between the two, not any single page.
+		if years := anachronisms(page.Body, in.Key.Year); len(years) > 0 {
+			report.add(Warn, "anachronism", where,
+				fmt.Sprintf("the page names %v and the issue is from %d", years, in.Key.Year))
+		}
 		// Rule 9, asked of the corpus for the same reason. A failure and not a
 		// warning: a welded word is a page with something wrong in it, and a
 		// decoder that looped is not a page at all.
@@ -266,6 +296,42 @@ func pages(report *Report, in Input) {
 				fmt.Sprintf("sheets %v all print page %s", indexes, label))
 		}
 	}
+}
+
+// A four digit year of the twentieth century.
+var yearRe = regexp.MustCompile(`19\d{2}`)
+
+// anachronisms is every year the page names that the issue had not reached,
+// sorted and without repeats.
+//
+// The neighbours are checked by hand rather than with \b, because \b in this
+// package's regexp is a boundary between an ASCII word character and anything
+// else, and every letter on these pages is Cyrillic. Problem М1983 is four
+// digits with a letter on the left, and \b puts a boundary there and reads it
+// as the year, which would make the rule fire on most of the problem section.
+func anachronisms(body string, year int) []int {
+	var out []int
+	for _, at := range yearRe.FindAllStringIndex(body, -1) {
+		before, _ := utf8.DecodeLastRuneInString(body[:at[0]])
+		after, _ := utf8.DecodeRuneInString(body[at[1]:])
+		if isWordRune(before) || isWordRune(after) {
+			continue
+		}
+		named, err := strconv.Atoi(body[at[0]:at[1]])
+		if err != nil || named <= year+1 || slices.Contains(out, named) {
+			continue
+		}
+		out = append(out, named)
+	}
+	slices.Sort(out)
+	return out
+}
+
+// isWordRune says whether a rune would make the digits beside it part of
+// something longer than a year. RuneError covers the ends of the body, where
+// there is no neighbour and nothing to reject.
+func isWordRune(r rune) bool {
+	return r != utf8.RuneError && (unicode.IsLetter(r) || unicode.IsDigit(r))
 }
 
 // formulas is the KaTeX rule. Every span, not a sample: one formula that does
