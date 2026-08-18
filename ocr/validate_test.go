@@ -219,3 +219,33 @@ func clipTest(s string) string {
 	}
 	return s
 }
+
+// Rule 8 was rejecting the chess pages, and it was wrong about every one of
+// them. Шахматная страничка prints its moves the Russian way, a Cyrillic piece
+// letter against a Latin square, so a correct read of one board mixes two
+// alphabets twenty times over.
+func TestChessNotationIsNotAMisread(t *testing.T) {
+	text := page(2) + "\nБелые: Крg1, Фd3, Лf1, Сc4, Кe5. Чёрные: Крh8, Фa5, Лd8.\n" +
+		"Решение: 1. Фh7+ Крf8 2. Фh8+ Крe7 3. Лf7+ Крd6 4. Кc4+ Крc5.\n"
+	for _, problem := range ocr.Validate(text, body(t), ocr.Options{}) {
+		if problem.Rule == ocr.RuleScript {
+			t.Fatalf("a chess page was rejected: %s", problem.Detail)
+		}
+	}
+}
+
+// And the exemption has to stay the size of a chess move. The run that made
+// rule 8 necessary is still the thing it is for.
+func TestChessNotationDoesNotHideAWeldedWord(t *testing.T) {
+	text := page(2) + "\nБелые: Крg1, Фd3. При dvижении тележки надо найти Funcцию, " +
+		"которая описывает teхнику и её svойства, а затем проверить otvет.\n"
+	found := false
+	for _, problem := range ocr.Validate(text, body(t), ocr.Options{}) {
+		if problem.Rule == ocr.RuleScript {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("a page with five welded words was accepted because it also had chess on it")
+	}
+}
