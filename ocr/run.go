@@ -219,7 +219,7 @@ func (r *Runner) Run(ctx context.Context) (Summary, error) {
 				case err != nil:
 					summary.Failed++
 					r.log("%s: %v", job.Target, err)
-					if state == queue.Pending {
+					if errors.Is(err, ErrImageGone) {
 						if released[job.Target] {
 							halt = true
 							failed = errors.Join(failed, fmt.Errorf(
@@ -248,6 +248,18 @@ func (r *Runner) Run(ctx context.Context) (Summary, error) {
 	}
 	return summary, failed
 }
+
+// ErrImageGone marks the one failure that is ours and not the page's: the sheet
+// the job points at is not on this disk.
+//
+// It has to be told apart from an ordinary failure, because the two want
+// opposite handling. A page the model got wrong goes back to pending and is
+// tried again, which is the whole point of three attempts. A page whose image
+// is not there also goes back to pending, deliberately, so that a mount which
+// blinks does not cost the page an attempt, and trying that again immediately
+// is a loop. Both look like a pending job with an error, so the difference is
+// carried in the error rather than guessed from the state.
+var ErrImageGone = errors.New("the page image is not readable here")
 
 // one reads a single page and files the result.
 //
@@ -333,7 +345,7 @@ func (r *Runner) attempt(ctx context.Context, job queue.Job, spent *meter) (queu
 		if release := r.Queue.Release(job, "the page image is not readable here"); release != nil {
 			return "", nil, release
 		}
-		return queue.Pending, nil, fmt.Errorf("%s: %w", job.Target, err)
+		return queue.Pending, nil, fmt.Errorf("%s: %w: %w", job.Target, ErrImageGone, err)
 	}
 
 	raw, err := r.read(ctx, image, spent)
