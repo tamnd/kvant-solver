@@ -127,17 +127,21 @@ const (
 
 // Result is one worked problem.
 type Result struct {
-	ID         string         `yaml:"id"`
-	Subject    corpus.Subject `yaml:"subject"`
-	Solution   string         `yaml:"solution"`
-	Reference  string         `yaml:"reference,omitempty"`
-	Candidates []string       `yaml:"candidates,omitempty"`
-	Selected   int            `yaml:"selected,omitempty"`
-	Judgements []Judgement    `yaml:"judgements,omitempty"`
-	Verdict    string         `yaml:"verdict"`
-	Model      string         `yaml:"model,omitempty"`
-	Usage      api.Usage      `yaml:"usage,omitempty"`
-	Elapsed    time.Duration  `yaml:"elapsed,omitempty"`
+	ID      string         `yaml:"id"`
+	Subject corpus.Subject `yaml:"subject"`
+	// Year the magazine set the problem, carried through from the Problem so
+	// that a scorecard can cut the score by decade. Nothing in the solving
+	// reads it.
+	Year       int           `yaml:"year,omitempty"`
+	Solution   string        `yaml:"solution"`
+	Reference  string        `yaml:"reference,omitempty"`
+	Candidates []string      `yaml:"candidates,omitempty"`
+	Selected   int           `yaml:"selected,omitempty"`
+	Judgements []Judgement   `yaml:"judgements,omitempty"`
+	Verdict    string        `yaml:"verdict"`
+	Model      string        `yaml:"model,omitempty"`
+	Usage      api.Usage     `yaml:"usage,omitempty"`
+	Elapsed    time.Duration `yaml:"elapsed,omitempty"`
 }
 
 // Verified reports whether both judges passed, which is the only condition
@@ -165,7 +169,7 @@ func (e *Engine) Solve(ctx context.Context, p Problem, opts Options) (Result, er
 		prompts = DefaultPrompts{}
 	}
 
-	res := Result{ID: p.ID, Subject: p.Subject, Verdict: Skip}
+	res := Result{ID: p.ID, Subject: p.Subject, Year: p.Year, Verdict: Skip}
 	var usage api.Usage
 
 	// guard says whether the answer is going to be published. It is true for
