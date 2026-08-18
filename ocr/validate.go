@@ -440,6 +440,20 @@ func mixedWords(text string, lex *lexicon.Lexicon) (int, string) {
 // it has ever used and still sits twenty times below the smallest failure.
 const MaxWordRunes = 40
 
+// MaxPageWords is the most words a printed page of this magazine can hold.
+//
+// The measurement is not close. Over the 16764 pages in the corpus the median
+// is 434 words and the ninety ninth percentile is 877, which is a full page set
+// in two columns with no figure on it. Then the distribution stops being a
+// distribution: the next half percent runs 2733, 6429, 9496, and every one of
+// those is a decoder that got stuck rather than a page somebody printed.
+//
+// Twelve hundred sits a third above the highest honest page, which is the same
+// headroom MaxWordRunes leaves, and it sits below every failure but one. Ninety
+// nine pages of the corpus are over it and ninety seven of those are over two
+// thousand, so the band this threshold could be wrong about holds two pages.
+const MaxPageWords = 1200
+
 // checkRunaway is rule 9, and it is here because three pages of 1975 went into
 // the corpus as немесямедысимедысимедысимедыси for two thousand nine hundred
 // letters.
@@ -452,20 +466,50 @@ const MaxWordRunes = 40
 // rule 8 is blind to it because a loop in Cyrillic never leaves the alphabet.
 // One of the three was a 102 KB page file next to a median of 3 KB.
 //
-// The signal is not repetition, which is expensive to look for and which real
-// text does. It is that no word is this long. A run of letters past
+// The first signal is that no word is this long. A run of letters past
 // MaxWordRunes is not a word in any language this magazine prints, so whatever
 // produced it was not reading.
+//
+// The second signal is that no page is this long, and it is here because the
+// first one only sees a loop that forgets to press space. This rule used to say
+// that repetition was the wrong thing to look for, and reading the corpus
+// against it says that was wrong: 1980 issue 7 sheet 51 is a 52 KB page whose
+// text is MBТУ four hundred and twenty three times, and rule 9 could not see it
+// because MBТУ is four letters long. Ninety seven more pages are the same
+// failure with a different token. Rule 8 caught that one by luck, because the
+// token it repeated happened to mix two alphabets, and a loop stuck on a
+// Cyrillic word walks past every rule in this file.
+//
+// Length is the cheap way to ask. A loop has to put its output somewhere and a
+// printed page has a size, so a page carrying three times more words than the
+// longest sheet this magazine ever set did not come off that sheet. It costs one
+// pass over the words that rule 8 is about to make anyway.
 func checkRunaway(text string) (Problem, bool) {
 	longest, word := LongestWord(text)
-	if longest <= MaxWordRunes {
-		return Problem{}, true
+	if longest > MaxWordRunes {
+		return Problem{
+			Rule: RuleRunaway,
+			Detail: fmt.Sprintf("a run of %d letters, %q, and no word is that long, so the model was repeating itself",
+				longest, clip(word)),
+		}, false
 	}
-	return Problem{
-		Rule: RuleRunaway,
-		Detail: fmt.Sprintf("a run of %d letters, %q, and no word is that long, so the model was repeating itself",
-			longest, clip(word)),
-	}, false
+	if n := PageWords(text); n > MaxPageWords {
+		return Problem{
+			Rule: RuleRunaway,
+			Detail: fmt.Sprintf("%d words, and no page of this magazine holds more than %d, so the model was repeating itself",
+				n, MaxPageWords),
+		}, false
+	}
+	return Problem{}, true
+}
+
+// PageWords counts the words on a page.
+//
+// Exported for the same reason LongestWord is: the audit asks it of pages that
+// were written before the rule existed, and ninety eight of those are in the
+// corpus.
+func PageWords(text string) int {
+	return len(strings.FieldsFunc(text, func(r rune) bool { return !unicode.IsLetter(r) }))
 }
 
 // LongestWord returns the longest run of letters on a page and how long it is.

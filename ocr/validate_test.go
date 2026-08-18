@@ -126,6 +126,53 @@ func TestARunawayDecoderIsCaught(t *testing.T) {
 	}
 }
 
+// The loop that presses space. Rule 9 measured the longest word and nothing
+// else, so a decoder stuck on a short token walked straight past it: 1980 issue
+// 7 sheet 51 is in the corpus as MBТУ four hundred and twenty three times, and
+// four letters is four letters however many times it is written.
+func TestALoopThatPressesSpaceIsCaught(t *testing.T) {
+	cases := []struct {
+		name string
+		text string
+		want bool
+	}{
+		{"the token the corpus was found repeating", strings.Repeat("MBТУ ", 1500), false},
+		{"a loop on a Russian word, which rule 8 cannot see", strings.Repeat("поверхности ", 1500), false},
+		{"the longest page anybody printed", strings.Repeat("слово ", 850), true},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			text := page(2) + "\n\n" + c.text + "\n"
+			runaway := false
+			for _, p := range ocr.Validate(text, body(t), ocr.Options{}) {
+				if p.Rule == ocr.RuleRunaway {
+					runaway = true
+				}
+			}
+			if runaway == c.want {
+				t.Fatalf("rule 9 said %v, want %v, on %d words", runaway, !c.want, ocr.PageWords(text))
+			}
+		})
+	}
+}
+
+// The densest thing this magazine prints is a page of worked solutions, where
+// every other line is algebra and the control sequences count as words like
+// anything else. That page still has to pass, and the threshold is set from the
+// corpus so that it does: the heaviest sheet in sixteen thousand comes to 877
+// words counted this way.
+func TestAPageOfSolutionsIsNotARunaway(t *testing.T) {
+	text := page(2) + "\n\n" + strings.Repeat(`Отсюда $x_{n+1} = \frac{a_n + b_n}{2}$ и далее. `, 60) + "\n"
+	if n := ocr.PageWords(text); n > ocr.MaxPageWords {
+		t.Fatalf("the test built a page of %d words, which is not the case it means to make", n)
+	}
+	for _, p := range ocr.Validate(text, body(t), ocr.Options{}) {
+		if p.Rule == ocr.RuleRunaway {
+			t.Fatalf("rule 9 rejected %d words of solutions: %s", ocr.PageWords(text), p.Detail)
+		}
+	}
+}
+
 // The audit has to ask the same question of pages written before the rule
 // existed, which is what LongestWord is for.
 func TestLongestWordFindsTheRun(t *testing.T) {
