@@ -49,6 +49,7 @@ func run(args []string) error {
 		{"publisher", "publisher [--from Y --to Y]", "download the text the archive already holds", runPublisher},
 		{"report", "report failures|cost|diff", "write the failure list, what the reading cost, and how far the archive's text agrees", runReport},
 		{"sources", "sources probe", "report what each source holds per year", runSources},
+		{"tags", "tags assign|verify|list|resolve", "give every object a permanent name and check it", runTags},
 		{"textguard", "textguard --all|--year Y", "decide how each page is read and price it", runTextguard},
 		{"version", "version", "print the version", runVersion},
 	}
