@@ -72,7 +72,15 @@ func (f Failure) Class() string {
 // The repair queue is read as well, because a dead page and a queued repair are
 // the same page and the report should say which of the dead ones already has a
 // second pass waiting.
-func Failures(jobs *queue.Queue) ([]Failure, error) {
+//
+// read says whether a page is in the corpus, and the ones that are do not
+// appear. A dead job is a record of what happened rather than of what is
+// missing: a page that three lanes could not read and a fourth could leaves the
+// first three failures behind it forever. The first version of this listed
+// them, so a complete year reported 115 pages that never read while every one
+// of the 928 sat in the corpus. Passing nil lists everything, which is what a
+// caller with no corpus to hand has to do.
+func Failures(jobs *queue.Queue, read func(corpus.PageID) bool) ([]Failure, error) {
 	dead, err := jobs.List(queue.StageOCR, queue.Dead)
 	if err != nil {
 		return nil, err
@@ -92,6 +100,9 @@ func Failures(jobs *queue.Queue) ([]Failure, error) {
 		if err != nil {
 			// Not a page, so not a page that failed. The queue carries other
 			// stages and this report is only about the reading.
+			continue
+		}
+		if read != nil && read(id) {
 			continue
 		}
 		fail := Failure{

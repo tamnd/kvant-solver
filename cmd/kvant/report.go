@@ -132,6 +132,7 @@ func runReportFailures(args []string) error {
 	queueDir := fs.String("queue", "", "where the job queue lives, cache/queue by default")
 	from := fs.Int("from", 1970, "first year the report covers, for the heading")
 	to := fs.Int("to", 1989, "last year of that range")
+	lang := fs.String("lang", corpus.DefaultLang, "the tree the pages were read into")
 	out := fs.String("out", "", "write here instead of corpus/reports/ocr-failures.md")
 	stdout := fs.Bool("stdout", false, "print the document instead of writing it")
 	if err := fs.Parse(args); err != nil {
@@ -146,7 +147,18 @@ func runReportFailures(args []string) error {
 	if err != nil {
 		return err
 	}
-	list, err := report.Failures(jobs)
+	// The corpus is what says a page is finished. Without one the report can
+	// only list the queue, which is a record of everything that ever went wrong
+	// rather than of what is still wrong.
+	var read func(corpus.PageID) bool
+	if *root != "" {
+		c, err := corpus.Open(*root)
+		if err != nil {
+			return err
+		}
+		read = func(id corpus.PageID) bool { return c.HasPage(*lang, id) }
+	}
+	list, err := report.Failures(jobs, read)
 	if err != nil {
 		return err
 	}

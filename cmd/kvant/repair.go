@@ -67,7 +67,9 @@ func runRepair(args []string) error {
 	if err != nil {
 		return err
 	}
-	failures, err := report.Failures(jobs)
+	failures, err := report.Failures(jobs, func(id corpus.PageID) bool {
+		return c.HasPage(*lang, id)
+	})
 	if err != nil {
 		return err
 	}
