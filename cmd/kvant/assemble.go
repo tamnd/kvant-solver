@@ -145,7 +145,7 @@ func preferTyped(store publisher.Store, key corpus.IssueKey, article assemble.Ar
 	if why != "" || chosen != text {
 		return article.Body, extractionOf(article, read), why
 	}
-	return text, corpus.ExtractionPublisher, ""
+	return publisher.Titled(article.Title, text), corpus.ExtractionPublisher, ""
 }
 
 // writeArticle puts one assembled article in the corpus.
