@@ -239,3 +239,47 @@ func (checker) Check(fragment string, _ bool) error {
 	}
 	return nil
 }
+
+// The rule that does not trust the front matter, because the front matter and
+// the path were written from the same value and agreed with each other while
+// both named the wrong issue.
+func TestAPageNamingAYearTheIssuePredatesIsReported(t *testing.T) {
+	in := clean(t)
+	in.Pages[0].Body = "⟦folio 1⟧\n\nНапечатано в 1983 году, оглавление за год.\n"
+	report := audit.Issue(in)
+	var found *audit.Finding
+	for i, finding := range report.Findings {
+		if finding.Rule == "anachronism" {
+			found = &report.Findings[i]
+		}
+	}
+	if found == nil {
+		t.Fatalf("a 1975 page dated 1983 passed: %s", report)
+	}
+	if found.Level != audit.Warn {
+		t.Errorf("the finding is a %s, want a warning at the rate real pages trip it", found.Level)
+	}
+	if !strings.Contains(found.Detail, "1983") {
+		t.Errorf("the finding does not say which year: %s", found.Detail)
+	}
+}
+
+// A December issue prints next year's dates, and the magazine writes about the
+// year 2000. Neither is a page in the wrong place, and a rule that says they
+// are is a rule people learn to skip past.
+func TestTheYearsAnIssueIsAllowedToNameArePassed(t *testing.T) {
+	for _, body := range []string{
+		"⟦folio 1⟧\n\nПриём заявок на олимпиаду 1976 года открыт.\n",
+		"⟦folio 1⟧\n\nК 2000 году эта задача будет решена.\n",
+		"⟦folio 1⟧\n\nВ 1917 году всё изменилось.\n",
+		"⟦folio 1⟧\n\nЗадача М1983 о вписанной окружности.\n",
+	} {
+		in := clean(t)
+		in.Pages[0].Body = body
+		for _, finding := range audit.Issue(in).Findings {
+			if finding.Rule == "anachronism" {
+				t.Errorf("%q was called anachronistic: %s", body, finding.Detail)
+			}
+		}
+	}
+}
