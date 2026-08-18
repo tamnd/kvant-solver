@@ -41,6 +41,10 @@ type Count struct {
 	// text does not account for.
 	Ours  int
 	Extra int
+
+	// Near is how many of the changed words are the two readings spelling the
+	// same word differently rather than one of them missing it. See near.
+	Near int
 }
 
 // Rate is the share of the archive's own words that our reading of the same
@@ -50,6 +54,23 @@ func (c Count) Rate() float64 {
 		return 0
 	}
 	return float64(c.Changed) / float64(c.Words)
+}
+
+// Missing is the share of the first reading's words the second does not have in
+// any spelling.
+//
+// It is Rate with the near misses taken out, and it is the stricter of the two
+// questions a comparison can ask. Rate counts every word the two put
+// differently, which includes one of them having misread a letter in a word the
+// other has right, and that is a defect nobody downstream would notice. This
+// counts only text that is not there, which is the defect that makes a page
+// unusable and cannot be recovered from later. See near for what separates them
+// and for the limits of doing it by spelling.
+func (c Count) Missing() float64 {
+	if c.Words == 0 {
+		return 0
+	}
+	return float64(c.Changed-c.Near) / float64(c.Words)
 }
 
 // Coverage is the share of our reading the archive's text accounts for.
@@ -95,10 +116,11 @@ const MaxExamples = 5
 // measures our assembly and calls it their typing.
 func Compare(publisher, vision string) (Count, []Example) {
 	left, right := Words(publisher), Words(vision)
-	changed, extra, examples := distance(left, right)
+	changed, extra, close, examples := distance(left, right)
 	return Count{
 		Words: len(left), Changed: changed,
 		Ours: len(right), Extra: extra,
+		Near: close,
 	}, examples
 }
 
@@ -193,7 +215,7 @@ func separator(r rune) bool {
 // article is a few thousand words and the table is a few million cells, which
 // is milliseconds, and because the alternative is a dependency for one page of
 // code that every reader of this repo already knows.
-func distance(a, b []string) (changed, extra int, examples []Example) {
+func distance(a, b []string) (changed, extra, close int, examples []Example) {
 	// The rows are kept as one slice each, and the moves are kept alongside so
 	// that the examples come out of the same table the number does.
 	prev := make([]int, len(b)+1)
@@ -237,7 +259,7 @@ func distance(a, b []string) (changed, extra int, examples []Example) {
 // the archive's article does not reach, and a table of five of those says
 // nothing except that the two cut the page in different places, which the
 // coverage figure already says in one number.
-func walk(trace [][]byte, a, b []string) (changed, extra int, examples []Example) {
+func walk(trace [][]byte, a, b []string) (changed, extra, close int, examples []Example) {
 	var out []Example
 	i, j := len(a), len(b)
 	for i > 0 || j > 0 {
@@ -247,6 +269,9 @@ func walk(trace [][]byte, a, b []string) (changed, extra int, examples []Example
 			continue
 		case 's':
 			changed++
+			if near(a[i-1], b[j-1]) {
+				close++
+			}
 			out = append(out, Example{Publisher: a[i-1], Vision: b[j-1]})
 			i, j = i-1, j-1
 		case 'd':
@@ -265,7 +290,69 @@ func walk(trace [][]byte, a, b []string) (changed, extra int, examples []Example
 	if len(out) > MaxExamples {
 		out = out[:MaxExamples]
 	}
-	return changed, extra, out
+	return changed, extra, close, out
+}
+
+// near reports whether two words that came out different are the same word
+// spelled two ways.
+//
+// The distinction matters because the two failures it separates are not
+// comparable. A word one reading has and the other does not have at all is text
+// gone missing, and that is what a comparison is run to find. A word both
+// readings have and spell within a character or two of each other is one of them
+// having misread a letter: кабитации for кавитации, зреня for зрения. The words
+// are still there, a reader still gets the sentence, and no amount of it makes a
+// page unusable the way a dropped line does.
+//
+// It is a heuristic and it cannot be anything else. It cannot tell a misread
+// from a different form of the same word, and физике against физфаке counts as
+// near here when it is two different words. So the count is a floor under how
+// much of a disagreement is noise rather than a measurement of it, and it is
+// reported that way.
+func near(a, b string) bool {
+	x, y := []rune(a), []rune(b)
+	allowed := 1
+	if max(len(x), len(y)) > 5 {
+		allowed = 2
+	}
+	if abs(len(x)-len(y)) > allowed {
+		return false
+	}
+	return edits(x, y, allowed) <= allowed
+}
+
+// edits is the character level distance between two words, giving up once it is
+// past the limit, which is what keeps this cheap enough to run per substitution.
+func edits(a, b []rune, limit int) int {
+	prev := make([]int, len(b)+1)
+	cur := make([]int, len(b)+1)
+	for j := range prev {
+		prev[j] = j
+	}
+	for i := 1; i <= len(a); i++ {
+		cur[0] = i
+		best := cur[0]
+		for j := 1; j <= len(b); j++ {
+			if a[i-1] == b[j-1] {
+				cur[j] = prev[j-1]
+			} else {
+				cur[j] = 1 + min(prev[j-1], min(prev[j], cur[j-1]))
+			}
+			best = min(best, cur[j])
+		}
+		if best > limit {
+			return limit + 1
+		}
+		prev, cur = cur, prev
+	}
+	return prev[len(b)]
+}
+
+func abs(n int) int {
+	if n < 0 {
+		return -n
+	}
+	return n
 }
 
 // Year is the disagreement for one year, over the articles sampled in it. Its

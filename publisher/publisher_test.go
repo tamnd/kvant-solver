@@ -150,6 +150,50 @@ func TestCompareCountsTheArchivesOwnWrongWords(t *testing.T) {
 	}
 }
 
+// A letter misread in a word the other reading has right is not the same defect
+// as a word that is not there, and the two have to come out separately or the
+// looser one gets quoted as the tighter.
+func TestAMisreadLetterIsCountedApartFromAMissingWord(t *testing.T) {
+	pub := "явление кавитации известно давно"
+	ours := "явление кабитации известно давно"
+	count, _ := publisher.Compare(pub, ours)
+	if count.Changed != 1 {
+		t.Fatalf("%d words differ, want the one", count.Changed)
+	}
+	if count.Near != 1 {
+		t.Errorf("%d of them counted as a near miss, and кабитации is кавитации with a letter wrong", count.Near)
+	}
+	if got := count.Missing(); got != 0 {
+		t.Errorf("missing is %.2f, want none, the word is there and it is spelled wrong", got)
+	}
+	if count.Rate() == 0 {
+		t.Error("the rate hides it entirely, and the split is meant to show the working rather than bury it")
+	}
+}
+
+func TestADifferentWordIsNotANearMiss(t *testing.T) {
+	pub := "второй международный семинар"
+	ours := "второй междисциплинарный семинар"
+	count, _ := publisher.Compare(pub, ours)
+	if count.Near != 0 {
+		t.Fatalf("%d near misses, and международный is not международный misspelled", count.Near)
+	}
+	if got := count.Missing(); got == 0 {
+		t.Error("missing is zero, and one of the two readings has a word the other does not")
+	}
+}
+
+func TestAWordOneReadingDoesNotHaveAtAllIsMissing(t *testing.T) {
+	// The failure the whole comparison exists to find: text gone, not text
+	// spelled differently.
+	pub := "первая строка и вторая строка"
+	ours := "первая строка строка"
+	count, _ := publisher.Compare(pub, ours)
+	if count.Changed-count.Near != 2 {
+		t.Fatalf("%d words missing of %d changed, want the two that are gone", count.Changed-count.Near, count.Changed)
+	}
+}
+
 // The sample has to be the same articles every run, or the rate moves when
 // nobody changed anything.
 func TestTheSampleIsStableAndPerYear(t *testing.T) {
