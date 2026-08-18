@@ -73,10 +73,17 @@ kvant native check --issue kvant_2010_1 --sample 100
 This takes the pages the lane wrote, reads the scan of the same sheets through the vision lane into a corpus that is thrown away at the end, and compares the two word for word.
 It writes `reports/native-check.md`, and `--keep DIR` leaves the second reading somewhere so the two can be put in a diff.
 
-It runs where both records exist, which today is the one issue whose page images were downloaded before the PDFs were.
-On `kvant_2010_1` it compared 17 pages of 9819 words.
-The two readings put 13.0% of those words differently and 5.6% of them are words the file does not have in any spelling.
+It runs where both records exist, which means an issue whose page images have been downloaded as well as its PDF.
+Two of them have, and together they came to 24 pages of 12859 words.
+The two readings put 13.8% of those words differently and 6.4% of them are words the file does not have in any spelling.
 Nearly all of the gap between those two numbers is the model on the picture having misread a letter in a word the file has right, `кабитации` for `кавитации`, and the file is the one that is correct.
+
+| issue | pages | words | differ | missing | accounted for | unread |
+|---|---:|---:|---:|---:|---:|---:|
+| kvant_2010_1 | 16 | 9447 | 13.3% | 5.7% | 87% | 7 |
+| kvant_2017_6 | 8 | 3412 | 15.2% | 8.2% | 98% | 5 |
+
+The twelve unread pages are all the vision lane failing its own rules on the scan, folio misreads and script violations, and none of them is evidence about the file.
 
 ## What the check found
 
@@ -88,9 +95,25 @@ The native reading of that page is three hundred and fifty clean words and it is
 This is the failure mode the lane cannot see, and it is the reason the check exists rather than being reasoned about.
 Matter set as a picture does not arrive broken, it does not arrive.
 
-It is not guarded against yet.
-The obvious guard is a page whose images are large and whose text does not cover it, and on this issue that costs three good pages to catch the one bad one.
-Three false rejections is a defensible price and a threshold picked off a single page is not a defensible way to arrive at it, so this waits for a second issue that has both a scan and a file.
+It is not guarded against, and the second issue is the reason.
+The obvious guard is a page whose images are large and whose text does not cover it.
+On `kvant_2017_6` that guard cannot fire at all: every figure in the issue is drawn rather than pasted, `pdfimages -list` reports not one raster on any page of it, and matter set as a drawing is as absent from the text layer as matter set as a photograph.
+So the guard would have caught an artifact of how the 2010 file was made and been blind to the general case, while on the 2010 issue it costs three good pages to catch the one bad one.
+A rule that misses most of what it is for and charges three to one for the rest is not worth having.
+The check is the guard.
+
+## What the check gets wrong
+
+The worst page of the second issue is a good page, and it is worth knowing why before anyone acts on the ranking.
+
+Sheet 40 of `kvant_2017_6` scores 45.7% missing.
+It is an article about counting operations, and it carries a coordinate grid and two rows of numbered cards.
+Those are pictures in the file, so the lane writes `⟦figure⟧` where they stood, and the model looking at the photograph reads the numbers off and types them out.
+Eighty one of the hundred and twelve words scored missing are those numbers, most of the remaining thirty one are the second reading's own misspellings, and not one word of the article's prose is gone.
+
+Nothing here takes that out.
+Dropping numbers from the comparison would hide a page that really did lose a table, and the whole point of the exercise is that the arithmetic is a way of choosing pages for a person to open, not a verdict.
+So it is written down here and in the report the command generates, and the ranking stays honest about being a ranking.
 
 ## Where the archive has holes
 

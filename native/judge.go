@@ -75,12 +75,17 @@ type Expect struct {
 // The only witness is the photograph, which is why the check exists and why it
 // is run rather than reasoned about.
 //
-// It is not guarded against here. The obvious guard is a page whose images are
-// large and whose text does not cover it, and on the one issue there is evidence
-// for that costs three good pages to catch the one bad one. Three false
-// rejections is a defensible price and a threshold picked off a single page is
-// not a defensible way to arrive at it, so this waits for a second issue that
-// has both a scan and a file.
+// It is not guarded against here, and the second issue with both records is why.
+// The obvious guard is a page whose images are large and whose text does not
+// cover it. On the sixth issue of 2017 that guard cannot fire at all: every
+// figure in it is drawn rather than pasted, pdfimages reports not one raster on
+// any of its pages, and matter set as a drawing is as absent from the text layer
+// as matter set as a photograph. The guard would have caught a 2010 artifact of
+// how that file was made and been blind to the general case. It also costs, on
+// the first issue of 2010, three good pages to catch the one bad one. A rule
+// that misses most of what it is for and charges three to one for the rest is
+// not worth having, so the check is the guard, and it is run rather than
+// reasoned about.
 func Judge(p Page, expect Expect) Verdict {
 	switch {
 	case expect.Cover:
