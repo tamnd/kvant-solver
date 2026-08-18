@@ -50,6 +50,7 @@ func run(args []string) error {
 		{"problems", "problems build|list", "recover the problems and pair them with their printed solutions", runProblems},
 		{"repair", "repair [--from Y --to Y]", "read the dead pages through another lane", runRepair},
 		{"solve", "solve --set smoke", "work the problems and mark them against the printed solutions", runSolve},
+		{"translate", "translate --lang en --year 1975", "translate the corpus, and say what has gone stale", runTranslate},
 		{"publisher", "publisher [--from Y --to Y]", "download the text the archive already holds", runPublisher},
 		{"refs", "refs build|show [--year Y]", "resolve what the articles cite into tag links", runRefs},
 		{"report", "report failures|cost|diff|refs", "write the failure list, what the reading cost, and how far the archive's text agrees", runReport},
