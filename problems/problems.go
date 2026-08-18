@@ -165,6 +165,12 @@ type Printing struct {
 	Article string `yaml:"article"`
 	Pages   string `yaml:"pages,omitempty"`
 	Tag     string `yaml:"tag,omitempty"`
+	// Rubric is the section of the magazine the problem was printed in, which is
+	// the closest thing the archive has to a difficulty label: Задачник «Кванта»
+	// set the hard ones, «Квант» для младших школьников set problems for
+	// thirteen year olds, and Практикум абитуриента set entrance exam work. The
+	// magazine never graded a problem and this is what it said instead.
+	Rubric string `yaml:"rubric,omitempty"`
 }
 
 // Entry is one problem across both of its printings.
@@ -175,6 +181,17 @@ type Entry struct {
 	Posed   *Printing      `yaml:"posed,omitempty"`
 	Solved  *Printing      `yaml:"solved,omitempty"`
 	Authors []string       `yaml:"authors,omitempty"`
+}
+
+// Rubric is the section the problem was set in, taken from the printing that
+// posed it because that is the one that says what the problem was for. A
+// solution reprinted under a different heading years later says nothing about
+// how hard it was.
+func (e Entry) Rubric() string {
+	if e.Posed != nil && e.Posed.Rubric != "" {
+		return e.Posed.Rubric
+	}
+	return ""
 }
 
 // Solvable reports whether the magazine printed an answer. A problem without

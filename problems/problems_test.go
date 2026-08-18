@@ -257,3 +257,30 @@ func TestTheManifestSortsIntoSeriesAndNumberOrder(t *testing.T) {
 		}
 	}
 }
+
+func TestTheRubricIsRecordedOffTheArticle(t *testing.T) {
+	// The permanent slug where the tag stage has been, and the heading printed
+	// on the page where it has not. An article with neither is not a fault: the
+	// draw gives those their own cell rather than guessing.
+	res := Build([]Article{
+		{Path: "a.md", Body: "**М301.** Докажите.", Front: corpus.ArticleFront{
+			Issue: "kvant_1975_1", Year: 1975, Number: "1",
+			Title: "Задачи М301—М305", Rubric: "zadachnik-kvanta",
+			RubricSub: "Задачник «Кванта»",
+		}},
+		{Path: "b.md", Body: "**М302.** Докажите.", Front: corpus.ArticleFront{
+			Issue: "kvant_1975_2", Year: 1975, Number: "2",
+			Title: "Задачи М302", RubricSub: "Задачник «Кванта»",
+		}},
+	})
+	got := map[string]string{}
+	for _, e := range res.Manifest.Entries {
+		got[e.ID] = e.Rubric()
+	}
+	if got["M301"] != "zadachnik-kvanta" {
+		t.Fatalf("M301 rubric is %q, want the slug", got["M301"])
+	}
+	if got["M302"] != "Задачник «Кванта»" {
+		t.Fatalf("M302 rubric is %q, want the printed heading as the fallback", got["M302"])
+	}
+}

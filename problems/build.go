@@ -96,6 +96,7 @@ func Build(articles []Article) Result {
 				Article: art.Path,
 				Pages:   art.Front.PageLabels,
 				Tag:     string(art.Front.Tag),
+				Rubric:  rubric(art.Front),
 			}
 			// The first printing of a half is the one kept. A second is either a
 			// reprint or a number the reading lane misread onto the wrong page,
@@ -167,6 +168,21 @@ func Build(articles []Article) Result {
 		return res.Gaps[i].ID < res.Gaps[j].ID
 	})
 	return res
+}
+
+// rubric is the section of the magazine an article ran in.
+//
+// The permanent slug is preferred over the heading printed on the page, because
+// the heading is whatever the typesetter set that month and the slug is the same
+// string across fifty years. The heading is the fallback rather than nothing,
+// since an article the tag stage has not reached yet still knows what it was
+// printed under and dropping that would lose the only difficulty signal the
+// archive gives.
+func rubric(front corpus.ArticleFront) string {
+	if front.Rubric != "" {
+		return front.Rubric
+	}
+	return strings.TrimSpace(front.RubricSub)
 }
 
 func printingIssue(e *Entry, kind Kind) string {

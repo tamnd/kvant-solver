@@ -21,13 +21,14 @@ var evalSets = map[string]struct {
 }{
 	"smoke": {
 		perCell: 2,
-		why: "Two problems per decade and subject. Small enough to run on every change, " +
+		why: "Two problems per decade, subject and rubric. Small enough to run on every change, " +
 			"which is the only thing it is for: it answers whether the pipeline runs, not whether it is any good.",
 	},
 	"decade-stratified": {
 		perCell: 25,
-		why: "Twenty five problems per decade and subject, drawn evenly across the numbering. " +
-			"This is the set the scorecard is computed from, so it is weighted by decade rather than by how much of each decade happens to be read.",
+		why: "Twenty five problems per decade, subject and rubric, drawn evenly across the numbering. " +
+			"This is the set the scorecard is computed from, so it is weighted by decade rather than by how much of each decade happens to be read. " +
+			"The rubric is in the cell because the magazine never graded a problem and the section it printed it in is the nearest thing it said.",
 	},
 }
 
