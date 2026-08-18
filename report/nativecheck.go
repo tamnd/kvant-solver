@@ -96,6 +96,9 @@ func CheckMarkdown(checks []Check, generated time.Time) string {
 
 	out.WriteString("## Which of the three numbers to argue with\n\n")
 	out.WriteString("**Missing** is the one. A word the scan has and the file does not have at all is the text layer having dropped something, and that is exactly the failure the native lane cannot see on its own.\n\n")
+	out.WriteString("One thing inflates it and there is no arithmetic here that takes it out. A figure with numbers in it, a coordinate grid or a row of cards, is a picture in the file, and the native lane writes the figure marker where it stood while the model looking at the photograph reads the numbers off and types them. ")
+	out.WriteString("Those numbers then count as words the file is missing. On sheet 40 of the sixth issue of 2017 they are eighty one of the hundred and twelve words scored missing, and not one word of the article's prose is gone. ")
+	out.WriteString("A page that ranks badly here and turns out to be full of diagrams is usually this, and the way to tell is to look at it, which is what the list at the end is for.\n\n")
 	out.WriteString("**Differ** is the two figures added together and it is the weaker of them. Most of what it counts is the model on the picture having misread a letter in a word the file has right, кабитации for кавитации, and charging the text layer for those reports the second reading's errors as the first one's. ")
 	out.WriteString("It is kept because the split between the two is a heuristic on how far apart two spellings are, and a heuristic should be shown its working rather than trusted quietly.\n\n")
 	fmt.Fprintf(&out, "**Accounted for** is not an error rate at all. A word the file has and the reading of the picture does not is usually the model skipping a running head, a figure caption or a column it did not go back for, and on these pages it runs at %.0f%%. It says more about the second reading than about the first.\n\n", t.Coverage()*100)
