@@ -137,6 +137,82 @@ func TestLongestWordFindsTheRun(t *testing.T) {
 	}
 }
 
+// The exemption to rule 1, and the four things it has to keep apart.
+//
+// The first case is a real page: 1975 issue 5 sheet 31 is one plate of
+// epicycloids, and the pipeline prompt run against the actual image returns
+// exactly this, 42 characters of it. The other three are what a short page
+// looks like when it is short because something went wrong.
+func TestAFullPageFigureIsNotAShortPage(t *testing.T) {
+	cases := []struct {
+		name  string
+		text  string
+		short bool
+	}{
+		{
+			"the plate as the prompt asks for it",
+			"⟦folio 2⟧\n\n⟦figure⟧\nРис. 9. Эпициклоиды.\n",
+			false,
+		},
+		{
+			// 1975 issue 5 sheet 35, which is two plates and the rule and
+			// signature line the magazine sets at the foot of every sheet.
+			"two plates and the printer's furniture",
+			"⟦folio 2⟧\n\n⟦figure⟧\nРис. 3.\n\n⟦column⟧\n\n⟦figure⟧\nРис. 4.\n\n---\n3 «Квант» № 5\n",
+			false,
+		},
+		{
+			"a model that stopped in the prose",
+			"⟦folio 2⟧\n\nРассмотрим окружность радиуса $R$, катящуюся без скольжения по\n",
+			true,
+		},
+		{
+			"a model that stopped at the marker",
+			"⟦folio 2⟧\n\n⟦figure⟧\n",
+			true,
+		},
+		{
+			"a plate with no folio line to say which page it is",
+			"⟦figure⟧\nРис. 9. Эпициклоиды.\n",
+			true,
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			short := false
+			for _, problem := range ocr.Validate(c.text, body(t), ocr.Options{}) {
+				if problem.Rule == ocr.RuleShort {
+					short = true
+				}
+			}
+			if short != c.short {
+				t.Fatalf("rule 1 said short=%v, want %v, on %d characters",
+					short, c.short, len([]rune(c.text)))
+			}
+		})
+	}
+}
+
+// A page carrying a figure is not a plate. The exemption is for the sheet the
+// figure takes over, and a column of text next to one is a page that has to
+// clear the floor like any other, so a truncated read of it still fails.
+func TestAFigureInAPageOfTextDoesNotExemptIt(t *testing.T) {
+	text := "⟦folio 2⟧\n\n⟦figure⟧\nРис. 9. Эпициклоиды.\n\n" +
+		"Точка на ободе катящегося колеса описывает кривую, и первые\n"
+	if ocr.Plate(text) {
+		t.Fatal("a page with prose beside the figure was called a plate")
+	}
+	short := false
+	for _, problem := range ocr.Validate(text, body(t), ocr.Options{}) {
+		if problem.Rule == ocr.RuleShort {
+			short = true
+		}
+	}
+	if !short {
+		t.Fatal("a truncated page was accepted because it happened to carry a figure")
+	}
+}
+
 func clipTest(s string) string {
 	if r := []rune(s); len(r) > 20 {
 		return string(r[:20]) + "..."
