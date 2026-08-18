@@ -534,6 +534,13 @@ func TestTheLedgerLabelsAPageWithItsOwnIssue(t *testing.T) {
 	if _, err := runner.Run(context.Background()); err != nil {
 		t.Fatal(err)
 	}
+	// Closed before it is read back, and not left to a defer. Windows will not
+	// remove a file that is still open, so a ledger left open fails the temporary
+	// directory's cleanup rather than the test, which reads as a passing test on
+	// a failing run.
+	if err := ledger.Close(); err != nil {
+		t.Fatal(err)
+	}
 
 	entries, err := ocr.ReadLedger(path)
 	if err != nil {
