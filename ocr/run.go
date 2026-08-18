@@ -412,7 +412,7 @@ func (r *Runner) write(job queue.Job, text, image string) error {
 		Year:      r.Issue.Year,
 		Number:    r.Issue.Number,
 		PageIndex: index,
-		PageLabel: pageLabel(text),
+		PageLabel: pageLabel(text, r.expect(job)),
 		Rubrics:   Rubrics(text),
 		Illegible: strings.Count(text, Illegible),
 		Provenance: corpus.Provenance{
@@ -468,7 +468,18 @@ func (r *Runner) expect(job queue.Job) Expect {
 // pageLabel is the printed number as a string, empty when the page prints none.
 // It is a string in the front matter because a few pages are numbered with
 // roman numerals and one supplement is numbered with letters.
-func pageLabel(text string) string {
+//
+// A cover is taken at the manifest's word and not the model's. The manifest
+// says which sheets print no number, rule 5 is switched off for those because a
+// cover with no folio is not a failure, and switching the rule off left nothing
+// between a folio the model invented and the front matter. Four of the twelve
+// issues of 1975 had a cover holding a number that belongs to a body page, and
+// the audit found them as duplicate folios rather than as what they are, which
+// is the inside cover reading the number off the page facing it.
+func pageLabel(text string, expect Expect) string {
+	if expect.Cover {
+		return ""
+	}
 	if n, ok := Folio(text); ok {
 		return strconv.Itoa(n)
 	}
