@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/tamnd/kvant-solver/api"
+	"github.com/tamnd/kvant-solver/corpus"
 )
 
 // Marking is one solution measured against the printed one.
@@ -115,7 +116,28 @@ type Scorecard struct {
 	Overturned    int       `yaml:"overturned,omitempty"`
 	Anachronistic int       `yaml:"anachronistic,omitempty"`
 	Usage         api.Usage `yaml:"usage,omitempty"`
-	Markings      []Marking `yaml:"markings,omitempty"`
+	Markings      []Row     `yaml:"markings,omitempty"`
+}
+
+// Row is one problem's line in a scorecard: the marking, and the three things
+// the score has to be cut by.
+//
+// They are stored on the line rather than worked out at report time because a
+// scorecard read back off disk has to be able to produce the same report it
+// produced when it was written. A breakdown that lives only in the process that
+// ran the set is a breakdown that vanishes from every scorecard anybody reads
+// again.
+type Row struct {
+	Marking `yaml:",inline"`
+	Subject corpus.Subject `yaml:"subject,omitempty"`
+	Year    int            `yaml:"year,omitempty"`
+	// Solver is the model that wrote the solution, which is not Marking.Model.
+	// That one is the model that marked it, and a run where the two are equal is
+	// a run whose grader is checking its own work.
+	Solver string `yaml:"solver,omitempty"`
+	// Verified is what both judges said, kept here so that the false pass rate
+	// can be cut the same three ways as the score.
+	Verified bool `yaml:"verified"`
 }
 
 // Add records one problem.
@@ -141,7 +163,13 @@ func (s *Scorecard) Add(res Result, m Marking) {
 		s.Anachronistic++
 	}
 	s.Usage = s.Usage.Add(res.Usage).Add(m.Usage)
-	s.Markings = append(s.Markings, m)
+	s.Markings = append(s.Markings, Row{
+		Marking:  m,
+		Subject:  res.Subject,
+		Year:     res.Year,
+		Solver:   res.Model,
+		Verified: res.Verified(),
+	})
 }
 
 // Graded is how many problems actually got a mark.
@@ -187,30 +215,147 @@ func (a Agreement) FalsePassRate() float64 {
 	return float64(a.VerifiedAndWrong) / float64(total)
 }
 
-// Compare pairs each result with its marking.
-func Compare(results []Result, markings []Marking) Agreement {
-	grade := map[string]string{}
-	for _, m := range markings {
-		grade[m.ID] = m.Grade
-	}
+// Agreement is worked out from the scorecard's own lines.
+//
+// It used to take the results and the markings and pair them by id. It reads
+// them off one line each now, because the pairing was a second chance to lose a
+// problem: a result with no marking, or a marking with no result, simply fell
+// out of all four boxes and the totals still added up.
+func (s *Scorecard) Agreement() Agreement {
 	var a Agreement
-	for _, r := range results {
-		g, ok := grade[r.ID]
-		if !ok || g == Ungraded {
+	for _, row := range s.Markings {
+		if row.Grade == Ungraded {
 			continue
 		}
 		switch {
-		case r.Verified() && g == Correct:
+		case row.Verified && row.Grade == Correct:
 			a.VerifiedAndCorrect++
-		case r.Verified():
+		case row.Verified:
 			a.VerifiedAndWrong++
-		case g == Correct:
+		case row.Grade == Correct:
 			a.UnverifiedAndCorrect++
 		default:
 			a.UnverifiedAndWrong++
 		}
 	}
 	return a
+}
+
+// Stratum is the score over one slice of the set.
+type Stratum struct {
+	Name      string `yaml:"name"`
+	Attempted int    `yaml:"attempted"`
+	Graded    int    `yaml:"graded"`
+	Correct   int    `yaml:"correct"`
+	Verified  int    `yaml:"verified"`
+	FalsePass int    `yaml:"false_pass"`
+}
+
+// Rate is the share marked correct of those that could be marked, which is what
+// the milestone calls the agreement rate.
+func (t Stratum) Rate() float64 {
+	if t.Graded == 0 {
+		return 0
+	}
+	return float64(t.Correct) / float64(t.Graded)
+}
+
+// FalsePassRate is the share of verified solutions the magazine marks wrong.
+func (t Stratum) FalsePassRate() float64 {
+	if t.Verified == 0 {
+		return 0
+	}
+	return float64(t.FalsePass) / float64(t.Verified)
+}
+
+// By cuts the score along an axis, in name order.
+//
+// A line the axis has nothing to say about is named unknown and kept rather than
+// dropped, and unknown sorts last. Dropping it would make the rows add up to
+// fewer problems than the run attempted with nothing on the page to say why.
+func (s *Scorecard) By(axis func(Row) string) []Stratum {
+	index := map[string]*Stratum{}
+	for _, row := range s.Markings {
+		name := strings.TrimSpace(axis(row))
+		if name == "" {
+			name = "unknown"
+		}
+		into, ok := index[name]
+		if !ok {
+			into = &Stratum{Name: name}
+			index[name] = into
+		}
+		into.Attempted++
+		if row.Grade != Ungraded {
+			into.Graded++
+		}
+		if row.Grade == Correct {
+			into.Correct++
+		}
+		if row.Verified {
+			into.Verified++
+			if row.Grade != Correct && row.Grade != Ungraded {
+				into.FalsePass++
+			}
+		}
+	}
+	out := make([]Stratum, 0, len(index))
+	for _, stratum := range index {
+		out = append(out, *stratum)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if (out[i].Name == "unknown") != (out[j].Name == "unknown") {
+			return out[j].Name == "unknown"
+		}
+		return out[i].Name < out[j].Name
+	})
+	return out
+}
+
+// ByDecade cuts the score by the decade the magazine set the problem in.
+//
+// This is the axis the archive exists for. Fifty years of one magazine is fifty
+// years of changing syllabus and changing fashion in what a problem looks like,
+// and a single percentage over the lot says nothing about whether a model does
+// better on 1974 than on 2004.
+func (s *Scorecard) ByDecade() []Stratum {
+	return s.By(func(row Row) string {
+		if row.Year <= 0 {
+			return ""
+		}
+		return fmt.Sprintf("%ds", row.Year/10*10)
+	})
+}
+
+// BySubject separates the mathematics from the physics. They are marked by
+// different standards, since a physics answer carries units and a number to a
+// stated precision, and one number over both hides which of the two is dragging.
+func (s *Scorecard) BySubject() []Stratum {
+	return s.By(func(row Row) string { return string(row.Subject) })
+}
+
+// ByModel cuts by the model that wrote the solution, which is the axis that
+// makes a scorecard worth keeping after the run: two models over the same set
+// are only comparable if the same corpus and the same grader marked them both.
+func (s *Scorecard) ByModel() []Stratum {
+	return s.By(func(row Row) string { return row.Solver })
+}
+
+// strata writes one of the three tables, or nothing where the axis has one value
+// and the table would just be the total again under another heading.
+func strata(b *strings.Builder, title string, rows []Stratum) {
+	if len(rows) < 2 {
+		return
+	}
+	fmt.Fprintf(b, "### %s\n\n", title)
+	b.WriteString("| | attempted | graded | correct | agreement | false pass |\n")
+	b.WriteString("| --- | --- | --- | --- | --- | --- |\n")
+	for _, row := range rows {
+		fmt.Fprintf(b, "| %s | %d | %d | %d | %.1f%% | %.1f%% |\n",
+			row.Name, row.Attempted, row.Graded, row.Correct,
+			100*row.Rate(), 100*row.FalsePassRate())
+	}
+	b.WriteString("\n")
 }
 
 // Sort puts the markings in a stable order so that a rerun over the same set
@@ -220,7 +365,8 @@ func (s *Scorecard) Sort() {
 }
 
 // Report is reports/scorecard.md.
-func (s *Scorecard) Report(a Agreement) string {
+func (s *Scorecard) Report() string {
+	a := s.Agreement()
 	var b strings.Builder
 	fmt.Fprintf(&b, "# Scorecard: %s\n\n", s.Set)
 	if s.Model != "" {
@@ -240,6 +386,16 @@ func (s *Scorecard) Report(a Agreement) string {
 			"or came off the scan too damaged to read. They are left out of the score rather than "+
 			"counted as misses, since those are pages this corpus failed to read and not problems "+
 			"the solver got wrong.\n\n", s.Ungraded)
+	}
+	if decades, subjects, models := s.ByDecade(), s.BySubject(), s.ByModel(); len(decades)+len(subjects)+len(models) > 3 {
+		b.WriteString("## How the score is spread\n\n")
+		b.WriteString("Agreement is the share of the graded problems where our answer and the " +
+			"printed one match. False pass is the share of the solutions both judges approved " +
+			"that the magazine then marks wrong, which is the only measure of the judges that " +
+			"does not come from the judges.\n\n")
+		strata(&b, "By decade", decades)
+		strata(&b, "By subject", subjects)
+		strata(&b, "By model", models)
 	}
 	if s.Overturned > 0 {
 		fmt.Fprintf(&b, "## Where the grader sided with us\n\n%d markings went against the "+

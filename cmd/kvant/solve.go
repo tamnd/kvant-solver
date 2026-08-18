@@ -100,8 +100,6 @@ func runSolve(args []string) error {
 	if len(*only) > 0 {
 		card.Set = "ad hoc, " + strings.Join(*only, " ")
 	}
-	var results []solve.Result
-
 	ctx := context.Background()
 	for i, id := range ids {
 		fmt.Printf("[%d/%d] %s\n", i+1, len(ids), id)
@@ -119,7 +117,6 @@ func runSolve(args []string) error {
 			fmt.Printf("  failed: %v\n", err)
 			continue
 		}
-		results = append(results, res)
 
 		marking := solve.Marking{ID: id, Grade: solve.Ungraded}
 		if *grade {
@@ -143,8 +140,7 @@ func runSolve(args []string) error {
 	}
 
 	card.Sort()
-	agreement := solve.Compare(results, card.Markings)
-	report := card.Report(agreement) + account.Report()
+	report := card.Report() + account.Report()
 	fmt.Println()
 	fmt.Println(report)
 
