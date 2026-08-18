@@ -284,6 +284,9 @@ func pages(report *Report, in Input) {
 		if n, word := ocr.LongestWord(page.Body); n > ocr.MaxWordRunes {
 			report.add(Fail, "runaway", where,
 				fmt.Sprintf("a run of %d letters, %q, so the model was repeating itself", n, clip(word)))
+		} else if n := ocr.PageWords(page.Body); n > ocr.MaxPageWords {
+			report.add(Fail, "runaway", where,
+				fmt.Sprintf("%d words, and no page of this magazine holds more than %d, so the model was repeating itself", n, ocr.MaxPageWords))
 		}
 	}
 	// Two pages printing the same number is a misread digit, and it is worth a
