@@ -503,3 +503,56 @@ func TestACoverKeepsNoPrintedNumber(t *testing.T) {
 		t.Error("the folio line was taken out of the transcription, and it is evidence")
 	}
 }
+
+// A repair run leases from a queue that spans issues, so the page it is reading
+// is very often not the issue its runner was opened on. Labelling the ledger
+// from the runner files a page of 1980 under whichever issue the runner
+// happened to start on, and the cost report then attributes a year of work to
+// the wrong year.
+func TestTheLedgerLabelsAPageWithItsOwnIssue(t *testing.T) {
+	runner, _, images := setup(t, func(image string, _ int) string {
+		return page(sheetOf(image))
+	})
+	path := filepath.Join(t.TempDir(), "ocr.jsonl")
+	ledger, err := ocr.OpenLedger(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runner.Ledger = ledger
+
+	// A job for a page of another issue entirely, put in the queue the way a
+	// revived job arrives rather than the way Enqueue writes one.
+	foreign := queue.New(queue.StageOCR, "kvant_1980_2_p0001", strings.Repeat("b", 64), runner.PromptSHA256)
+	foreign.Meta = map[string]string{
+		"image": filepath.Join(images, "0001.jpg"),
+		"sheet": "1",
+		"folio": "1",
+	}
+	if _, err := runner.Queue.Add(foreign); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runner.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	entries, err := ocr.ReadLedger(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var found bool
+	for _, e := range entries {
+		if e.Target != "kvant_1980_2_p0001" {
+			continue
+		}
+		found = true
+		if e.Issue != "kvant_1980_2" {
+			t.Errorf("a page of 1980 №2 was filed under %q", e.Issue)
+		}
+		if e.Year != 1980 {
+			t.Errorf("a page of 1980 was filed under year %d", e.Year)
+		}
+	}
+	if !found {
+		t.Fatalf("no ledger line for the foreign page, got %d entries", len(entries))
+	}
+}
