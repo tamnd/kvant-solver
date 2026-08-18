@@ -34,6 +34,16 @@ func (c *Corpus) PagePath(lang string, id PageID) string {
 	return filepath.Join(c.IssueDir(lang, id.Issue), "pages", id.Filename())
 }
 
+// HasPage says whether a page has been read into the corpus.
+//
+// The corpus is the answer to what is finished, not the queue. A page that
+// three lanes could not read and a fourth could is done, and the three dead
+// jobs behind it are history rather than work.
+func (c *Corpus) HasPage(lang string, id PageID) bool {
+	_, err := os.Stat(c.PagePath(lang, id))
+	return err == nil
+}
+
 // ArticlePath is where one article file goes. The ordinal is the article's
 // position in the printed contents, and it is in the filename so that a
 // directory listing is the table of contents in order. A slug is not enough for

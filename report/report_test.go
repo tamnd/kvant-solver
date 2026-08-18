@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/tamnd/kvant-solver/api"
+	"github.com/tamnd/kvant-solver/corpus"
 	"github.com/tamnd/kvant-solver/ocr"
 	"github.com/tamnd/kvant-solver/queue"
 	"github.com/tamnd/kvant-solver/report"
@@ -119,7 +120,7 @@ func TestTheFailuresListNamesTheClassOfEveryDeadPage(t *testing.T) {
 		"the service answered with an error: upstream connect error",
 		"the service answered with an error: upstream connect error")
 
-	list, err := report.Failures(q)
+	list, err := report.Failures(q, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -169,5 +170,32 @@ func TestAnEmptyFailuresListStillWritesADocument(t *testing.T) {
 	}
 	if !strings.Contains(md, "1970 to 1989") {
 		t.Errorf("the document does not say what range it covers:\n%s", md)
+	}
+}
+
+// A dead job is a record of what happened, not of what is missing. A page that
+// three lanes could not read and a fourth could leaves three failures behind it
+// forever, and listing those made a complete year look like a broken one: 1975
+// reported 115 pages that never read while all 928 of them sat in the corpus.
+func TestAPageThatWasReadIsNotAFailure(t *testing.T) {
+	q, err := queue.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	q.MaxAttempts = 2
+	killed(t, q, "kvant_1975_1_p0007", "short: 40 characters", "short: 12 characters")
+	killed(t, q, "kvant_1975_1_p0009", "illegible: 9 unreadable spots", "illegible: 11 unreadable spots")
+
+	// Page seven was read afterwards by another lane. Page nine was not.
+	read := func(id corpus.PageID) bool { return id.Index == 7 }
+	list, err := report.Failures(q, read)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(list) != 1 {
+		t.Fatalf("the list has %d pages, want only the one still missing", len(list))
+	}
+	if list[0].Target != "kvant_1975_1_p0009" {
+		t.Errorf("the list names %s, want the page that is not in the corpus", list[0].Target)
 	}
 }
