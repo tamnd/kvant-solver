@@ -68,6 +68,18 @@ func (c *Corpus) ProblemPath(lang string, id ProblemID) string {
 	return filepath.Join(c.Root, "content", lang, filepath.FromSlash(id.Path()))
 }
 
+// SolutionPath is where our own worked solution goes.
+//
+// It sits under content/solutions/ rather than beside the problem, and the two
+// are never the same file. What the magazine printed is source material and
+// what this repository worked out is not, so a reader who wants the archive can
+// take content/<lang> and leave the machine's answers behind. It also means the
+// solver can be rerun over a whole set without touching a single byte of the
+// scanned corpus, which is what makes a bad run cheap to throw away.
+func (c *Corpus) SolutionPath(lang string, id ProblemID) string {
+	return filepath.Join(c.Root, "content", "solutions", lang, filepath.FromSlash(id.Path()))
+}
+
 // IssuePath is where the masthead and printed contents of an issue go.
 func (c *Corpus) IssuePath(lang string, key IssueKey) string {
 	return filepath.Join(c.IssueDir(lang, key), "issue.md")
