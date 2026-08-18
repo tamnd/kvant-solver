@@ -8,6 +8,7 @@ import (
 	"github.com/tamnd/kvant-solver/api"
 	"github.com/tamnd/kvant-solver/corpus"
 	"github.com/tamnd/kvant-solver/ocr"
+	"github.com/tamnd/kvant-solver/problems"
 	"github.com/tamnd/kvant-solver/queue"
 	"github.com/tamnd/kvant-solver/report"
 )
@@ -221,4 +222,51 @@ func TestCostCountsAPageAgainstItsOwnYear(t *testing.T) {
 	if spends[0].Year != 1976 || spends[1].Year != 1980 {
 		t.Errorf("the years are %d and %d", spends[0].Year, spends[1].Year)
 	}
+}
+
+func TestTheCrosscheckSaysWhatItCompared(t *testing.T) {
+	x := &problems.Crosscheck{
+		Checks: []problems.Check{
+			problems.Cross(posedIn("M301", "kvant_1975_1", "kvant_1975_8"), "одно и то же",
+				problems.Joined{PosedIn: "kvant_1975_1", SolvedIn: "kvant_1975_8", Condition: "одно и то же"}),
+			problems.Cross(posedIn("F372", "kvant_1975_12", ""), "",
+				problems.Joined{PosedIn: "kvant_1976_12", SolvedIn: "kvant_1976_9"}),
+			problems.Cross(posedIn("M261", "", "kvant_1975_1"), "",
+				problems.Joined{PosedIn: "kvant_1974_5", SolvedIn: "kvant_1975_1"}),
+		},
+		Absent: []string{"M999"},
+	}
+	md := report.CrosscheckMarkdown(x, time.Date(2026, 8, 18, 0, 0, 0, 0, time.UTC))
+
+	for _, want := range []string{
+		"3 problems compared, 1 more whose number the site does not index",
+		// The disagreement, and the reason nobody has to go and check it.
+		"| F372 | posed | kvant_1975_12 | kvant_1976_12 |",
+		"before the issue it says set it",
+		// The useful direction: an issue to go and read.
+		"| M261 | posed | kvant_1974_5 |",
+	} {
+		if !strings.Contains(md, want) {
+			t.Errorf("the document does not say %q", want)
+		}
+	}
+}
+
+func TestACrosscheckWithNothingInItSaysSo(t *testing.T) {
+	md := report.CrosscheckMarkdown(&problems.Crosscheck{}, time.Date(2026, 8, 18, 0, 0, 0, 0, time.UTC))
+	if !strings.Contains(md, "Nothing to compare") {
+		t.Error("an empty run should say it compared nothing rather than print empty tables")
+	}
+}
+
+// posedIn is one manifest entry with whichever halves the test needs.
+func posedIn(id, posed, solved string) problems.Entry {
+	e := problems.Entry{ID: id}
+	if posed != "" {
+		e.Posed = &problems.Printing{Issue: posed}
+	}
+	if solved != "" {
+		e.Solved = &problems.Printing{Issue: solved}
+	}
+	return e
 }

@@ -16,13 +16,15 @@ import (
 
 func runProblems(args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("problems needs a subcommand, which is build or list")
+		return fmt.Errorf("problems needs a subcommand, which is build, list or crosscheck")
 	}
 	switch args[0] {
 	case "build":
 		return runProblemsBuild(args[1:])
 	case "list":
 		return runProblemsList(args[1:])
+	case "crosscheck":
+		return runProblemsCrosscheck(args[1:])
 	default:
 		return fmt.Errorf("unknown problems subcommand %q", args[0])
 	}

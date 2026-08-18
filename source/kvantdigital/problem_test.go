@@ -176,3 +176,45 @@ func TestParseProblemRefusesAPageWithNoNumber(t *testing.T) {
 		t.Fatal("a page with no problem number should be an error")
 	}
 }
+
+// untyped is the shape of the several hundred pages the site has indexed and
+// not typed: the condition block is there with its issue and its page, and the
+// words are only in the scan.
+const untyped = `<html><body>
+<h1><span class="mark--hlwords--flt">Задача Ф351</span></h1>
+<div class="box--block"><h2><span class="no-copy">Условие задачи (1975,&nbsp;№&nbsp;8)</span></h2>
+<div class="block--text"></div></div>
+<div class="box--block"><h2><span class="no-copy">Метаданные</span></h2>
+<dl class="object--meta"><dt>Номера</dt><dd>
+<p><a href="//www.kvant.digital/view/kvant_1975_8/" data-url="&quot;kvant_1975_8&quot;">1975</a> № 8 <label>39</label> [условие]</p>
+<p><a href="//www.kvant.digital/view/kvant_1976_2/" data-url="&quot;kvant_1976_2&quot;">1976</a> № 2 <label>44—45</label> [решение]</p>
+</dd></dl></div>
+</body></html>`
+
+func TestAPageTheSiteHasNotTypedIsStillRead(t *testing.T) {
+	p, err := ParseProblem(strings.NewReader(untyped))
+	if err != nil {
+		t.Fatalf("a page with no typed condition should still be read: %v", err)
+	}
+	if p.ID != "F351" {
+		t.Errorf("id is %q", p.ID)
+	}
+	// The words are the part that is missing, and the references are the part
+	// that is worth having: they say which issue printed each half, which is
+	// what the cross check is taken on.
+	if p.Condition.Text != "" {
+		t.Errorf("condition text is %q, the page carries none", p.Condition.Text)
+	}
+	if p.Condition.Year != 1975 || p.Condition.Number != "8" {
+		t.Errorf("condition is dated %d number %q", p.Condition.Year, p.Condition.Number)
+	}
+	if len(p.Refs) != 2 {
+		t.Fatalf("%d refs", len(p.Refs))
+	}
+	if p.Refs[0].IssueKey != "kvant_1975_8" || p.Refs[0].Kind != KindCondition {
+		t.Errorf("condition ref is %+v", p.Refs[0])
+	}
+	if p.Refs[1].IssueKey != "kvant_1976_2" || p.Refs[1].Kind != KindSolution {
+		t.Errorf("solution ref is %+v", p.Refs[1])
+	}
+}
