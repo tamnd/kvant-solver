@@ -71,6 +71,15 @@ func Align(v *Volume, issues []manifest.Issue) (map[string][]Leaf, error) {
 // alignment that is off by a leaf scores near zero, and that is the failure
 // worth catching, because it produces a comparison that looks merely
 // disappointing rather than broken.
+//
+// Note what it does not say. It compares the archive's numbers against the
+// archive's own leaf positions, so a perfect score means the archive is
+// internally consistent and nothing more. It cannot say that those leaves are
+// the issue we think they are, and it cannot say a word about our pages. The
+// first run of this found 1975's fourth issue scoring 63 of 63 while fifteen of
+// its sixty eight pages held text from a different issue of the magazine, which
+// is a defect on our side that a number in the corner of somebody else's scan
+// was never going to see.
 func Verify(leaves []Leaf) (checked, agreed int) {
 	votes := map[int]int{}
 	type numbered struct {
