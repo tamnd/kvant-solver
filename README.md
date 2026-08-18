@@ -79,6 +79,7 @@ tags          permanent tags, assignment and verification
 translate     ru into en, vi, zh, ja
 solve         reference blind solver and verifier
 grade         our solution against the one the magazine printed
+pricing       what a run cost, per route and per model
 audit         corpus checks
 publish       the static site, built from committed Markdown
 ```

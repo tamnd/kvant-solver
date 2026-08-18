@@ -24,6 +24,11 @@ const (
 	PersonaliaFile = "personalia.yaml"
 	RubricsFile    = "rubrics.yaml"
 	ErrataFile     = "errata.yaml"
+	// PricingFile is the rate card. It is corpus metadata and not a table in
+	// the program for the same reason the errata are: it changes without notice
+	// and a stale copy compiled into a binary goes on printing totals that look
+	// authoritative long after they stopped being true.
+	PricingFile = "pricing.yaml"
 )
 
 // ErrMissing is returned for a manifest that has not been written yet. It is

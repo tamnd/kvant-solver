@@ -14,6 +14,7 @@ import (
 	"github.com/tamnd/kvant-solver/api"
 	"github.com/tamnd/kvant-solver/corpus"
 	"github.com/tamnd/kvant-solver/manifest"
+	"github.com/tamnd/kvant-solver/pricing"
 	"github.com/tamnd/kvant-solver/problems"
 	"github.com/tamnd/kvant-solver/solve"
 )
@@ -67,12 +68,30 @@ func runSolve(args []string) error {
 		return fmt.Errorf("nothing to solve")
 	}
 
+	// The rate card is corpus metadata, so the money in a scorecard carries the
+	// day it was copied and where from. A corpus without one still gets the
+	// token accounting, which is the half that cannot go stale.
+	var rates *pricing.Card
+	if store.Exists(manifest.PricingFile) {
+		rates = &pricing.Card{}
+		if err := store.Read(manifest.PricingFile, rates); err != nil {
+			return err
+		}
+	}
+	account := pricing.New(rates)
+
 	engine := &solve.Engine{
-		Client: &api.Client{
-			URL:        *endpoint,
-			APIKey:     *key,
-			HTTPClient: &http.Client{Timeout: *timeout + time.Minute},
-			UserAgent:  "kvant/" + version,
+		// The meter wraps the client rather than living in the engine, because
+		// every call the run makes goes through here: the reference call, the
+		// candidates, the selector, both judges, the repairs and the grader.
+		Client: &pricing.Meter{
+			Account: account,
+			Client: &api.Client{
+				URL:        *endpoint,
+				APIKey:     *key,
+				HTTPClient: &http.Client{Timeout: *timeout + time.Minute},
+				UserAgent:  "kvant/" + version,
+			},
 		},
 		Progress: func(line string) { fmt.Println("  " + line) },
 	}
@@ -125,7 +144,7 @@ func runSolve(args []string) error {
 
 	card.Sort()
 	agreement := solve.Compare(results, card.Markings)
-	report := card.Report(agreement)
+	report := card.Report(agreement) + account.Report()
 	fmt.Println()
 	fmt.Println(report)
 
