@@ -451,3 +451,55 @@ func TestARevivedJobIsPointedAtTheSheetThisMachineHas(t *testing.T) {
 		t.Fatalf("the revived job carries %d attempts, want a clean three", back.Attempts)
 	}
 }
+
+// The manifest says which sheets print no number and rule 5 is switched off for
+// those, because a cover with no folio is not a failure. Switching the rule off
+// left nothing between a folio the model invented and the front matter, and
+// four of the twelve issues of 1975 ended up with a cover holding the number of
+// a body page. The audit found them as duplicate folios, which is a true report
+// of a misleading fact.
+func TestACoverKeepsNoPrintedNumber(t *testing.T) {
+	runner, _, images := setup(t, func(image string, _ int) string {
+		// The inside cover reading the number off the page facing it, which is
+		// what the four of them were doing.
+		if sheetOf(image) == 1 {
+			return page(9)
+		}
+		return page(sheetOf(image))
+	})
+	list, err := ocr.Sheets(images, func(index int) ocr.Expect {
+		return ocr.Expect{Issue: "kvant_1975_1", Cover: index == 1, Folio: index}
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runner.Enqueue(list); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runner.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct {
+		index int
+		label string
+	}{{1, ""}, {2, "2"}} {
+		var front corpus.PageFront
+		path := runner.Corpus.PagePath("ru", corpus.PageID{Issue: runner.Issue, Index: c.index})
+		if _, err := corpus.Load(path, &front); err != nil {
+			t.Fatal(err)
+		}
+		if front.PageLabel != c.label {
+			t.Errorf("sheet %d has page_label %q, want %q", c.index, front.PageLabel, c.label)
+		}
+	}
+	// And the transcription itself is untouched. The folio line is what the
+	// model saw and the front matter is what the pipeline claims, and only the
+	// second one is the pipeline's to decide.
+	body, err := corpus.Load(runner.Corpus.PagePath("ru", corpus.PageID{Issue: runner.Issue, Index: 1}), &corpus.PageFront{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(body, "⟦folio 9⟧") {
+		t.Error("the folio line was taken out of the transcription, and it is evidence")
+	}
+}
