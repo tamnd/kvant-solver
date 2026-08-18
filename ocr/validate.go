@@ -25,6 +25,12 @@ import (
 // what a truncated answer or a one line apology comes to.
 const MinChars = 200
 
+// MaxFurnitureRunes is how long a line can be and still be apparatus rather
+// than text. The signature line at the foot of a sheet, the rule above a
+// footnote and a running head are all under it, and a line of this magazine set
+// in two columns is about 45 characters, so a sentence does not fit.
+const MaxFurnitureRunes = 40
+
 // MaxIllegible is how many unreadable spots a page may carry and still be
 // accepted. These are 1970s scans of 1970s printing, so some are expected. More
 // than four is a model that gave up, and re-reading at a higher resolution is
@@ -120,7 +126,7 @@ func Validate(text string, expect Expect, options Options) []Problem {
 	}
 
 	// Rule 1.
-	if !expect.Cover && len([]rune(body)) < MinChars {
+	if !expect.Cover && !Plate(body) && len([]rune(body)) < MinChars {
 		problems = append(problems, Problem{
 			Rule:   RuleShort,
 			Detail: fmt.Sprintf("%d characters, want at least %d", len([]rune(body)), MinChars),
@@ -165,6 +171,69 @@ func Validate(text string, expect Expect, options Options) []Problem {
 // OK says whether a page is accepted.
 func OK(text string, expect Expect, options Options) bool {
 	return len(Validate(text, expect, options)) == 0
+}
+
+// Plate says whether a page is a full page figure, which is the one honest way
+// a page of this magazine comes to forty characters.
+//
+// The prompt does not describe pictures. A figure gets a ⟦figure⟧ line and its
+// printed caption and nothing else, so a sheet given over to one plate is a
+// folio line, a marker and a line reading Рис. 9. Эпициклоиды. That is 42
+// characters, measured on 1975 issue 5 sheet 31, and rule 1 was throwing every
+// one of them back at a lane that read them correctly the first time and read
+// them the same way the second.
+//
+// The whole page has to be accounted for, line by line, and that is what keeps
+// the exemption away from a truncated answer. The prompt says where a caption
+// goes: on the line under the marker. So a plate is a folio line, figure
+// markers, the line under each one, the printer's furniture, and nothing else.
+// A model that stopped in the middle of a column leaves a line of prose that
+// belongs to no figure, and that line is what fails it, however short the page
+// came to.
+//
+// Length is not asked about, and asking would be the wrong question twice over.
+// A plate with three figures and three long captions is still a plate, and a
+// page truncated after forty characters is still truncated.
+//
+// The furniture is the loose part and it is loose because it has to be. The
+// second plate this was tested against, 1975 issue 5 sheet 35, is two figures
+// and then the rule and signature line the magazine prints at the foot of every
+// sheet, and there is no way to recognise a signature line except that it is
+// short. What that costs was measured rather than argued: of 944 accepted body
+// pages, 77 carry a figure in their first 200 characters and 2 of those 77 have
+// nothing longer than a furniture line in front of them. So a body page cut off
+// at exactly the wrong point could pass here about twice in a thousand, and
+// both of the two are plates that a column of text continues under.
+//
+// The caption is the part that costs something. The prompt allows a figure with
+// no caption and the magazine prints them, so an uncaptioned plate is a real
+// page and this rejects it. It goes in the failures report as a class somebody
+// has already looked at, which is the trade taken deliberately: a handful of
+// plates read again by hand is cheaper than a truncated page going into the
+// corpus quietly, because the first is visible and the second is not.
+func Plate(text string) bool {
+	if !HasFolioLine(text) {
+		return false
+	}
+	figures, captions, after := 0, 0, false
+	for line := range strings.SplitSeq(text, "\n") {
+		trimmed := strings.TrimSpace(line)
+		caption := after
+		after = false
+		switch {
+		case trimmed == "":
+		case trimmed == FigureMarker:
+			figures++
+			after = true
+		case folioLine.MatchString(trimmed), trimmed == NoFolio, trimmed == ColumnMarker:
+		case caption:
+			captions++
+		case len([]rune(trimmed)) <= MaxFurnitureRunes:
+		default:
+			return false
+		}
+	}
+	return figures > 0 && captions > 0
 }
 
 // checkMath is rule 2. The splitter is mathtex, which is the same one the
