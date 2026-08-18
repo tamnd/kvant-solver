@@ -222,7 +222,8 @@ func runReportCost(args []string) error {
 	if *from > 0 || *to > 0 {
 		kept := entries[:0]
 		for _, entry := range entries {
-			if (*from == 0 || entry.Year >= *from) && (*to == 0 || entry.Year <= *to) {
+			year := entry.PageYear()
+			if (*from == 0 || year >= *from) && (*to == 0 || year <= *to) {
 				kept = append(kept, entry)
 			}
 		}

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/tamnd/kvant-solver/api"
+	"github.com/tamnd/kvant-solver/corpus"
 )
 
 // Ledger is one line per page read, appended as the run goes.
@@ -50,6 +51,25 @@ type Entry struct {
 	Usage  api.Usage `json:"usage"`
 	OK     bool      `json:"ok"`
 	Reason string    `json:"reason,omitempty"`
+}
+
+// PageYear is the year of the page this line is about.
+//
+// It is read off the target rather than taken from the field, because the
+// field was written from the runner rather than from the page until recently
+// and a ledger is never rewritten. A repair run leases from a queue that spans
+// issues, so those lines file a page of 1980 under whichever issue the runner
+// was opened on, and a report that went by the field would move a year of work
+// onto the wrong row. There are 791 of them in the archive on the box that has
+// read the Soviet decades so far.
+//
+// Reading it off the target heals the lines already written as well as the
+// ones written since, which a fix in the writer alone cannot do.
+func (e Entry) PageYear() int {
+	if id, err := corpus.ParsePageID(e.Target); err == nil {
+		return id.Issue.Year
+	}
+	return e.Year
 }
 
 // OpenLedger opens a ledger for appending, making its directory if it has to.
