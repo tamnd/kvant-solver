@@ -110,6 +110,11 @@ func runCorpusValidate(args []string) error {
 	fs := pflag.NewFlagSet("corpus validate", pflag.ContinueOnError)
 	root := fs.String("corpus", os.Getenv("KVANT_CORPUS"), "path to a tamnd/kvant checkout")
 	quiet := fs.Bool("quiet", false, "print the summary only")
+	// The flag CI uses. Without it a run fails while any sheet is unread, which
+	// is every day there has ever been and every day there will be until the
+	// reading lane has been over the whole magazine. With it the run fails on a
+	// file that is broken, which is the thing a check on a pull request is for.
+	structure := fs.Bool("structure", false, "fail only on a file that is wrong, not on a page that was never read")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -124,12 +129,21 @@ func runCorpusValidate(args []string) error {
 	}
 	if !*quiet {
 		for _, f := range rep.Findings {
+			if *structure && f.Gap {
+				continue
+			}
 			for line := range strings.SplitSeq(f.Err.Error(), "\n") {
 				fmt.Printf("%s: %s\n", f.Path, line)
 			}
 		}
 	}
 	fmt.Println(rep)
+	if *structure {
+		if !rep.Sound() {
+			return fmt.Errorf("corpus does not validate")
+		}
+		return nil
+	}
 	if !rep.OK() {
 		return fmt.Errorf("corpus does not validate")
 	}

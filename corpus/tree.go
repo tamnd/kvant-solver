@@ -47,22 +47,65 @@ type Report struct {
 }
 
 // Finding is one thing wrong, anchored at the file it is wrong in.
+//
+// Gap marks the findings that are a sheet with no page rather than a page with
+// something wrong in it. Thousands of sheets were refused by the reading rules
+// and every one of them leaves a hole in an issue's numbering. That is the
+// honest state of the corpus and not a defect in it: the alternative to a hole
+// is a page nobody could read written out anyway, which is worse in every way
+// that matters. They are still reported, because a reader has to know the page
+// is missing, and they are still counted, because the count is the reading
+// lane's own scoreboard. They are told apart so that a check meant to catch a
+// corrupted file does not spend its life failing on a page that was never read.
 type Finding struct {
 	Path string
 	Err  error
+	Gap  bool
 }
 
 // OK reports whether the corpus passed.
 func (r *Report) OK() bool { return len(r.Findings) == 0 }
 
+// Sound reports whether every file that exists is intact and consistent with
+// every other, ignoring the sheets that have no file at all.
+//
+// This is the question worth gating on. A corpus is sound when no page has been
+// edited without its hash following, no front matter has drifted from the
+// schema, and no article claims pages it does not have. Whether the reading
+// lane has finished is a different question with a different answer every week.
+func (r *Report) Sound() bool {
+	for _, f := range r.Findings {
+		if !f.Gap {
+			return false
+		}
+	}
+	return true
+}
+
+// Gaps is how many of the findings are a missing page.
+func (r *Report) Gaps() int {
+	n := 0
+	for _, f := range r.Findings {
+		if f.Gap {
+			n++
+		}
+	}
+	return n
+}
+
 func (r *Report) add(path string, err error) {
 	r.Findings = append(r.Findings, Finding{Path: path, Err: err})
 }
 
+// addGap records a sheet that has no page.
+func (r *Report) addGap(path string, err error) {
+	r.Findings = append(r.Findings, Finding{Path: path, Err: err, Gap: true})
+}
+
 // String is the one line summary the CLI prints.
 func (r *Report) String() string {
-	return fmt.Sprintf("%d issues, %d pages, %d articles, %d problems, %d solutions, %d findings",
-		len(r.Issues), r.Pages, r.Articles, r.Problems, r.Solutions, len(r.Findings))
+	return fmt.Sprintf("%d issues, %d pages, %d articles, %d problems, %d solutions, %d findings, %d of them a page that was never read",
+		len(r.Issues), r.Pages, r.Articles, r.Problems, r.Solutions, len(r.Findings), r.Gaps())
 }
 
 // Validate reads every file under content, checks its front matter and its
@@ -160,7 +203,7 @@ func (c *Corpus) Validate() (*Report, error) {
 		rep.Issues = append(rep.Issues, issue)
 		sort.Ints(indexes)
 		if indexes[0] != 1 {
-			rep.add(issue, fmt.Errorf("pages start at %d and not at 1", indexes[0]))
+			rep.addGap(issue, fmt.Errorf("pages start at %d and not at 1", indexes[0]))
 		}
 		for i := 1; i < len(indexes); i++ {
 			if indexes[i] == indexes[i-1] {
@@ -168,7 +211,7 @@ func (c *Corpus) Validate() (*Report, error) {
 				continue
 			}
 			if indexes[i] != indexes[i-1]+1 {
-				rep.add(issue, fmt.Errorf("pages jump from %d to %d", indexes[i-1], indexes[i]))
+				rep.addGap(issue, fmt.Errorf("pages jump from %d to %d", indexes[i-1], indexes[i]))
 			}
 		}
 		last := indexes[len(indexes)-1]

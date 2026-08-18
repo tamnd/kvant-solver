@@ -201,3 +201,70 @@ func joinFindings(rep *Report) string {
 	}
 	return b.String()
 }
+
+func TestAMissingPageIsAGapAndNotADefect(t *testing.T) {
+	// The distinction the CI check runs on. Thousands of sheets were refused by
+	// the reading rules and every one leaves a hole. A check that failed on
+	// those would fail every day there has ever been.
+	root := buildFixture(t)
+	front := &PageFront{
+		Issue:      "kvant_1975_1",
+		Year:       1975,
+		Number:     "1",
+		PageIndex:  9,
+		Provenance: Provenance{Lang: "ru", Source: "fixture", Extraction: ExtractionVision},
+	}
+	if err := Save(filepath.Join(root, "content/ru/1975/01/pages/0009.md"), front, "A page with nothing before it.\n"); err != nil {
+		t.Fatal(err)
+	}
+	c, _ := Open(root)
+	rep, err := c.Validate()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rep.OK() {
+		t.Fatal("a gap between page 2 and page 9 passed validation")
+	}
+	if !rep.Sound() {
+		t.Error("a corpus whose only complaint is an unread page is not sound")
+	}
+	if rep.Gaps() != len(rep.Findings) {
+		t.Errorf("%d of %d findings are gaps, want all of them", rep.Gaps(), len(rep.Findings))
+	}
+}
+
+func TestAnArticleOffTheEndOfItsIssueIsNotAGap(t *testing.T) {
+	// The other side of it. This is a file disagreeing with another file, which
+	// no amount of reading will fix, so it has to fail the check that gaps pass.
+	root := buildFixture(t)
+	article := &ArticleFront{
+		ID:         "1975-1-runaway",
+		Issue:      "kvant_1975_1",
+		Year:       1975,
+		Number:     "1",
+		Title:      "Runaway",
+		PageFirst:  1,
+		PageLast:   80,
+		Provenance: Provenance{Lang: "ru", Source: "fixture", Extraction: ExtractionVision},
+	}
+	if err := Save(filepath.Join(root, "content/ru/1975/01/articles/02_runaway.md"), article, "Body.\n"); err != nil {
+		t.Fatal(err)
+	}
+	c, _ := Open(root)
+	rep, _ := c.Validate()
+	if rep.Sound() {
+		t.Error("an article running past its issue was treated as an unread page")
+	}
+}
+
+func TestAGoodCorpusIsSoundAndHasNoGaps(t *testing.T) {
+	root := buildFixture(t)
+	c, _ := Open(root)
+	rep, err := c.Validate()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !rep.Sound() || rep.Gaps() != 0 {
+		t.Errorf("sound %v with %d gaps on a corpus with nothing wrong", rep.Sound(), rep.Gaps())
+	}
+}
