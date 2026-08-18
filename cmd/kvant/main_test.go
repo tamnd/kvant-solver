@@ -89,3 +89,16 @@ func TestHelpAndVersionDoNotFail(t *testing.T) {
 		}
 	}
 }
+
+func TestRereadWithoutSheetsIsRefused(t *testing.T) {
+	// --reread deletes page files. Without --sheets it would delete a year, and
+	// the difference between the two commands is one flag somebody forgot.
+	root := fixture(t)
+	err := run([]string{"ocr", "--corpus", root, "--issue", "kvant_1975_1", "--reread"})
+	if err == nil {
+		t.Fatal("reread with no sheets named was accepted")
+	}
+	if !strings.Contains(err.Error(), "--sheets") {
+		t.Errorf("the error does not say what is missing: %v", err)
+	}
+}

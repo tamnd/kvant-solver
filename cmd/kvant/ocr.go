@@ -27,6 +27,7 @@ func runOCR(args []string) error {
 	images := fs.String("images", "", "read these images instead of staging from the cache")
 	engineFlags := addLaneFlags(fs, "served")
 	only := fs.IntSlice("sheets", nil, "read only these sheets, which is how a repair pass is aimed")
+	reread := fs.Bool("reread", false, "throw the named sheets' pages away and read them again")
 	workers := fs.Int("workers", 1, "pages in flight at once, which the browser lane must leave at one")
 	lang := fs.String("lang", corpus.DefaultLang, "the tree the pages are written into")
 	checkTeX := fs.Bool("latex", true, "run every formula through KaTeX before accepting a page")
@@ -37,6 +38,12 @@ func runOCR(args []string) error {
 	}
 	if len(*f.years) == 0 && len(*f.issues) == 0 {
 		return fmt.Errorf("name an --issue, which for the first milestone is kvant_1975_1")
+	}
+	// Rereading without naming sheets would be a year deleted by a typo. There
+	// is no use for it either: a pass that wants to reread everything is a pass
+	// that should be reading into an empty tree.
+	if *reread && len(*only) == 0 {
+		return fmt.Errorf("--reread needs --sheets, because it throws pages away")
 	}
 
 	issues, err := selected(f)
@@ -136,6 +143,25 @@ func runOCR(args []string) error {
 			Folio:   reader.Folio,
 			Options: options, Workers: *workers, Ledger: ledger,
 			Logf: func(format string, args ...any) { fmt.Printf("  "+format+"\n", args...) },
+		}
+		// The page file is what stops a sheet being read twice, everywhere in
+		// this command, so rereading is throwing the page away and letting the
+		// ordinary path do the rest. One guard rather than a flag threaded
+		// through the runner and the queue and remembered at every call site.
+		//
+		// This exists because a page can be well formed and wrong. The shape
+		// rules pass it, nothing downstream complains, and the only way anybody
+		// finds out is a second reading of the same paper disagreeing with it.
+		// When that happens the page has to go, and until now the only way to
+		// make that happen was rm.
+		if *reread {
+			for _, sheet := range sheets {
+				path := c.PagePath(*lang, corpus.PageID{Issue: key, Index: sheet.Index})
+				if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+					return err
+				}
+			}
+			fmt.Printf("%s: %d pages thrown away to be read again\n", issues[i].Key, len(sheets))
 		}
 		// A sheet is named on the command line because the last lane could not
 		// read it, and the queue remembers that: three failures make a job dead,
