@@ -295,11 +295,21 @@ func (r *Runner) record(job queue.Job, spent meter, problems []Problem, err erro
 	if r.Ledger == nil || !spent.read {
 		return
 	}
+	// The issue and the year come off the target rather than off the runner.
+	// They are the same thing when a runner is reading one issue, and they are
+	// not when it is leasing from a queue that spans several, which is what
+	// repair does. Taking them from the runner there files a page of 1980 under
+	// whichever issue the runner happened to be opened on, and the cost report
+	// then attributes a year of work to the wrong year.
+	issue, year := r.Issue.String(), r.Issue.Year
+	if id, err := corpus.ParsePageID(job.Target); err == nil {
+		issue, year = id.Issue.String(), id.Issue.Year
+	}
 	entry := Entry{
 		TS:      r.now().UTC(),
 		Target:  job.Target,
-		Issue:   r.Issue.String(),
-		Year:    r.Issue.Year,
+		Issue:   issue,
+		Year:    year,
 		Engine:  r.Engine.Name(),
 		Host:    r.host(),
 		Seconds: spent.seconds,
