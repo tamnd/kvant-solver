@@ -4,11 +4,29 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
 	"github.com/tamnd/kvant-solver/ocr"
 )
+
+// shell is a program that says the given line and then fails, whichever
+// operating system the test is running on. The lane runs whatever it is
+// pointed at and the interesting part is what comes back from a program that
+// exits non zero, so the cheapest such program will do.
+func shell(script string) (string, []string) {
+	if runtime.GOOS == "windows" {
+		if script == "" {
+			return "cmd", []string{"/c", "exit 1"}
+		}
+		return "cmd", []string{"/c", script + " & exit 1"}
+	}
+	if script == "" {
+		return "/bin/sh", []string{"-c", "exit 1"}
+	}
+	return "/bin/sh", []string{"-c", script + "; exit 1"}
+}
 
 // A repair pass over 1975 printed "exit status 1:" seven hundred times with
 // nothing after the colon, because the CLI it runs writes its errors on
@@ -21,29 +39,30 @@ func TestAFailedCommandSaysWhatWentWrong(t *testing.T) {
 	}
 
 	cases := []struct {
-		name string
-		args []string
-		want string
+		name   string
+		script string
+		want   string
 	}{
 		{
 			"it complained on standard error",
-			[]string{"-c", "echo 'the credentials expired' >&2; exit 1"},
+			"echo the credentials expired 1>&2",
 			"the credentials expired",
 		},
 		{
 			"it complained on standard output",
-			[]string{"-c", "echo 'usage limit reached'; exit 1"},
+			"echo usage limit reached",
 			"usage limit reached",
 		},
 		{
 			"it complained nowhere at all",
-			[]string{"-c", "exit 1"},
+			"",
 			"and said nothing",
 		},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			engine := ocr.Command{Path: "/bin/sh", Args: c.args, Prompt: "read it"}
+			path, args := shell(c.script)
+			engine := ocr.Command{Path: path, Args: args, Prompt: "read it"}
 			_, err := engine.Read(context.Background(), image)
 			if err == nil {
 				t.Fatal("a program that exits 1 read the page")
