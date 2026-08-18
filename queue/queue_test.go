@@ -830,3 +830,57 @@ func TestAJobGoesOutNoMoreOftenThanItsAttemptBound(t *testing.T) {
 		}
 	}
 }
+
+func TestTheGroupOfATargetIsTheVolumeItBelongsTo(t *testing.T) {
+	for target, want := range map[string]string{
+		"kvant_1975_1_p0007":   "kvant_1975_1",
+		"kvant_1980_11_p0064":  "kvant_1980_11",
+		"kvant_1971_6-7_p0001": "kvant_1971_6-7",
+		"alg-i-iii/0045":       "alg-i-iii",
+		"kvant_1975_1":         "kvant_1975_1",
+		// Not a page suffix, and a rule that trims on _p alone would eat the
+		// end of both of these.
+		"kvant_1975_1_part2": "kvant_1975_1_part2",
+		"lecture_p12":        "lecture_p12",
+	} {
+		if got := GroupOf(target); got != want {
+			t.Errorf("GroupOf(%q) = %q, want %q", target, got, want)
+		}
+	}
+}
+
+// The bug this pins let a run of one issue read and file a page of another,
+// because the OCR runner asked for anything in the stage and the group of a
+// Kvant page was the whole page id, so asking for an issue matched nothing.
+func TestAWorkerAsksForOneIssueAndIsGivenNothingFromAnother(t *testing.T) {
+	q := open(t)
+	for _, target := range []string{"kvant_1975_1_p0001", "kvant_1980_2_p0001", "kvant_1975_1_p0002"} {
+		if _, err := q.Add(New(StageOCR, target, strings.Repeat("a", 64), strings.Repeat("b", 64))); err != nil {
+			t.Fatal(err)
+		}
+	}
+	seen := map[string]bool{}
+	for {
+		job, err := q.Lease(StageOCR, "host", "kvant_1975_1", time.Minute)
+		if errors.Is(err, ErrEmpty) {
+			break
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		if GroupOf(job.Target) != "kvant_1975_1" {
+			t.Fatalf("a run of 1975 №1 was handed %s", job.Target)
+		}
+		seen[job.Target] = true
+		if _, err := q.Finish(job, true, ""); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if len(seen) != 2 {
+		t.Fatalf("the run took %d of its own two pages: %v", len(seen), seen)
+	}
+	foreign := NewID(StageOCR, "kvant_1980_2_p0001", strings.Repeat("a", 64), strings.Repeat("b", 64))
+	if _, state, err := q.Find(StageOCR, foreign); err != nil || state != Pending {
+		t.Fatalf("the page of 1980 №2 is %s (%v), want pending and untouched", state, err)
+	}
+}

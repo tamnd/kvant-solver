@@ -100,8 +100,8 @@ func (s Summary) String() string {
 }
 
 // Target is the queue's name for one page. It is the page id, which is stable
-// across runs and readable in a job file, and it is what GroupOf splits on so
-// that one host takes one issue.
+// across runs and readable in a job file, and GroupOf takes the issue off it so
+// that a run reading one issue leases nothing from another.
 func (r *Runner) Target(index int) string {
 	return corpus.PageID{Issue: r.Issue, Index: index}.String()
 }
@@ -203,7 +203,7 @@ func (r *Runner) Run(ctx context.Context) (Summary, error) {
 				if stop {
 					return
 				}
-				job, err := r.Queue.Lease(queue.StageOCR, r.host(), "", r.lease())
+				job, err := r.Queue.Lease(queue.StageOCR, r.host(), r.Issue.String(), r.lease())
 				if errors.Is(err, queue.ErrEmpty) {
 					return
 				}
@@ -416,12 +416,29 @@ func (r *Runner) write(job queue.Job, text, image string) error {
 	if err != nil {
 		return fmt.Errorf("%s: the job carries no sheet number", job.Target)
 	}
+	// The page comes off the target, and the sheet number is only what is left
+	// when the target is not a page id. The runner is not asked, because a runner
+	// that has leased a page of another issue would file it under its own and the
+	// result is a real page of one volume sitting in another volume's slot. The
+	// front matter is written from the runner too, so the file agrees with its own
+	// path while both are wrong, and nothing downstream can tell.
+	//
+	// This cannot happen now that the lease is per issue, and it is checked here
+	// anyway. A wrong page written is silent and permanent, and a job that fails
+	// costs one attempt and goes back for its own runner to take.
 	id := corpus.PageID{Issue: r.Issue, Index: index}
+	if target, err := corpus.ParsePageID(job.Target); err == nil {
+		id = target
+	}
+	if id.Issue != r.Issue {
+		return fmt.Errorf("%s is a page of %s and this run is reading %s, so it was not written",
+			job.Target, id.Issue, r.Issue)
+	}
 	front := &corpus.PageFront{
-		Issue:     r.Issue.String(),
-		Year:      r.Issue.Year,
-		Number:    r.Issue.Number,
-		PageIndex: index,
+		Issue:     id.Issue.String(),
+		Year:      id.Issue.Year,
+		Number:    id.Issue.Number,
+		PageIndex: id.Index,
 		PageLabel: pageLabel(text, r.expect(job)),
 		Rubrics:   Rubrics(text),
 		Illegible: strings.Count(text, Illegible),
@@ -469,7 +486,13 @@ func (r *Runner) repair(job queue.Job, problems []Problem) error {
 }
 
 func (r *Runner) expect(job queue.Job) Expect {
-	expect := Expect{Issue: r.Issue.String(), Cover: job.Meta["cover"] == "yes"}
+	// Off the target for the same reason the write is, so that a rejection names
+	// the issue the page is from rather than the issue that happened to read it.
+	issue := r.Issue.String()
+	if target, err := corpus.ParsePageID(job.Target); err == nil {
+		issue = target.Issue.String()
+	}
+	expect := Expect{Issue: issue, Cover: job.Meta["cover"] == "yes"}
 	expect.Sheet, _ = strconv.Atoi(job.Meta["sheet"])
 	expect.Folio, _ = strconv.Atoi(job.Meta["folio"])
 	return expect
