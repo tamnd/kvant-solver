@@ -181,6 +181,15 @@ type Entry struct {
 	Posed   *Printing      `yaml:"posed,omitempty"`
 	Solved  *Printing      `yaml:"solved,omitempty"`
 	Authors []string       `yaml:"authors,omitempty"`
+	// Solvers is how many readers Квант named as having sent in a correct
+	// solution, and nil where no reader list covering this number has been read.
+	// Nil and zero are different answers: the first is a page this corpus has
+	// not got to and the second is a problem the magazine listed nobody for.
+	Solvers *int `yaml:"solvers,omitempty"`
+	// WidelySolved is the magazine saying nearly everyone got this one right,
+	// which is why it carries no names. Without it the easiest problems in the
+	// archive and the hardest both come out of the lists with a count of zero.
+	WidelySolved bool `yaml:"widely_solved,omitempty"`
 }
 
 // Rubric is the section the problem was set in, taken from the printing that

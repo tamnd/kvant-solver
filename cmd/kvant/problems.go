@@ -59,7 +59,11 @@ func runProblemsBuild(args []string) error {
 
 	res := problems.Build(articles)
 	counts := res.Manifest.Count()
+	credits := problems.CountCredits(res.Credits)
 	fmt.Printf("%d Задачник articles, %s\n", len(articles), counts)
+	if credits.Lists > 0 {
+		fmt.Printf("%s\n", credits)
+	}
 	if len(res.Gaps) > 0 {
 		fmt.Printf("%d gaps, the first few:\n", len(res.Gaps))
 		for _, g := range res.Gaps[:min(len(res.Gaps), 10)] {
@@ -75,9 +79,14 @@ func runProblemsBuild(args []string) error {
 	if err != nil {
 		return err
 	}
-	if err := store.Write(problems.ManifestFile, res.Manifest,
+	note := []string{
 		"Задачник «Кванта», recovered from the assembled articles.",
-		counts.String()); err != nil {
+		counts.String(),
+	}
+	if credits.Lists > 0 {
+		note = append(note, credits.String())
+	}
+	if err := store.Write(problems.ManifestFile, res.Manifest, note...); err != nil {
 		return err
 	}
 	fmt.Printf("wrote %s\n", store.Path(problems.ManifestFile))

@@ -43,6 +43,7 @@ type Result struct {
 	Manifest  Manifest
 	Documents []Document
 	Gaps      []Gap
+	Credits   []Credit
 }
 
 // Build recovers every problem the given articles carry.
@@ -76,6 +77,12 @@ func Build(articles []Article) Result {
 	for _, art := range sorted {
 		kind, ok := KindOf(art.Front.Title)
 		if !ok {
+			// The reader lists run in the same rubric and are neither half of a
+			// problem. They are how many people solved it, which is the only
+			// difficulty measure the magazine ever printed.
+			if credit, ok := Credits(art); ok {
+				res.Credits = append(res.Credits, *credit)
+			}
 			continue
 		}
 		found := map[corpus.ProblemID]bool{}
@@ -153,6 +160,7 @@ func Build(articles []Article) Result {
 		}
 		res.Documents = append(res.Documents, document(id, entry, text[id], prov[id]))
 	}
+	credit(res.Manifest.Entries, res.Credits)
 	res.Manifest.Sort()
 	sort.SliceStable(res.Documents, func(i, j int) bool {
 		a, b := res.Documents[i].Front, res.Documents[j].Front
@@ -168,6 +176,45 @@ func Build(articles []Article) Result {
 		return res.Gaps[i].ID < res.Gaps[j].ID
 	})
 	return res
+}
+
+// credit puts the reader counts onto the problems they belong to.
+//
+// A count of nil and a count of zero are different answers and the difference
+// is the whole point of the field, so a problem only gets a number when a list
+// covering its span was actually read. The counts add where more than one list
+// names the same problem, which the magazine did when a late solution arrived
+// after the first list had gone to press.
+func credit(entries []Entry, credits []Credit) {
+	if len(credits) == 0 {
+		return
+	}
+	covered := map[string]int{}
+	widely := map[string]bool{}
+	for _, c := range credits {
+		// The span first, at zero. A problem the list covered and named nobody
+		// for is the hardest thing in the issue and it has to come out of here
+		// as a nought rather than as an absence.
+		for _, id := range c.Span {
+			if _, ok := covered[id]; !ok {
+				covered[id] = 0
+			}
+		}
+		for _, id := range c.Widely {
+			widely[id] = true
+		}
+		for id, n := range c.Counts {
+			covered[id] += n
+		}
+	}
+	for i := range entries {
+		n, ok := covered[entries[i].ID]
+		if !ok {
+			continue
+		}
+		entries[i].Solvers = &n
+		entries[i].WidelySolved = widely[entries[i].ID]
+	}
 }
 
 // rubric is the section of the magazine an article ran in.
