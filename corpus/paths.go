@@ -14,8 +14,12 @@ import (
 //	content/<lang>/<year>/<number>/issue.md
 //	content/<lang>/<year>/<number>/pages/NNNN.md
 //	content/<lang>/<year>/<number>/articles/NN_slug.md
-//	content/<lang>/<year>/<number>/problems/M1234.md
-//	content/<lang>/solutions/M1234.md
+//	content/<lang>/problems/{m,f}/NNNN.md
+//	content/solutions/<lang>/problems/{m,f}/NNNN.md
+//
+// A problem sits outside the issue tree because it belongs to two issues, the
+// one that posed it and the one that answered it, and filing it under either
+// would make the other a dangling reference.
 //
 // Language is a directory and not a suffix because a translation is a whole
 // tree, and because ru and en then diff against each other file by file.
@@ -52,6 +56,16 @@ func (c *Corpus) HasPage(lang string, id PageID) bool {
 func (c *Corpus) ArticlePath(lang string, id ArticleID, ordinal int) string {
 	return filepath.Join(c.IssueDir(lang, id.Issue), "articles",
 		fmt.Sprintf("%02d_%s.md", ordinal, id.Slug))
+}
+
+// ProblemPath is where one problem goes, with both of its printed halves.
+//
+// A problem is filed under its own number rather than under the issue that
+// posed it, because it belongs to two issues and neither has a better claim.
+// The number is the permanent identifier the olympiad literature already cites
+// it by, so this path is stable across a reextraction.
+func (c *Corpus) ProblemPath(lang string, id ProblemID) string {
+	return filepath.Join(c.Root, "content", lang, filepath.FromSlash(id.Path()))
 }
 
 // IssuePath is where the masthead and printed contents of an issue go.
