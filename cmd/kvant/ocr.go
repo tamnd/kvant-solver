@@ -166,20 +166,30 @@ func runOCR(args []string) error {
 		// A sheet is named on the command line because the last lane could not
 		// read it, and the queue remembers that: three failures make a job dead,
 		// a dead job is already somewhere, and Enqueue would add nothing. Naming
-		// a sheet is the instruction to read it again, so the dead jobs for the
-		// named ones go back to pending here. Sheets that already have a page
-		// file are left alone, which is the same line Enqueue draws.
+		// a sheet is the instruction to read it again, so the finished jobs for
+		// the named ones go back to pending here. Sheets that already have a
+		// page file are left alone, which is the same line Enqueue draws.
+		//
+		// Under --reread the job is done rather than dead, because the sheet was
+		// read and the page it produced is what somebody wants gone. Deleting
+		// that page above is not enough on its own: Enqueue skips an id the queue
+		// already holds, in any state, so without this the flag threw ninety nine
+		// pages away and read back none of them.
 		if len(*only) > 0 {
-			dead, err := deadIDs(jobs)
+			states := []queue.State{queue.Dead}
+			if *reread {
+				states = append(states, queue.Done)
+			}
+			finished, err := jobIDs(jobs, states...)
 			if err != nil {
 				return err
 			}
-			revived, err := revive(jobs, runner, c, *lang, key, sheets, dead)
+			revived, err := revive(jobs, runner, c, *lang, key, sheets, finished)
 			if err != nil {
 				return err
 			}
 			if revived > 0 {
-				fmt.Printf("%s: %d dead sheets put back in the queue\n", issues[i].Key, revived)
+				fmt.Printf("%s: %d finished sheets put back in the queue\n", issues[i].Key, revived)
 			}
 		}
 		added, err := runner.Enqueue(sheets)
@@ -277,26 +287,26 @@ func pick(sheets []ocr.Sheet, want []int) []ocr.Sheet {
 	return out
 }
 
-// revive puts the dead jobs for a narrowed work list back in the queue and says
-// how many it moved.
+// revive puts the finished jobs for a narrowed work list back in the queue and
+// says how many it moved.
 //
 // The page file is the guard. A sheet that already has one is skipped whatever
 // the queue says about it, because the corpus is what has to be complete and
 // re-reading a page that is already good is a call spent to overwrite something
 // that was fine.
 //
-// The dead map comes from deadIDs. A job is filed under a hash of its target
-// and its prompt, so the target alone does not name a file, and the first
-// version of this passed the target and quietly reset nothing: the run printed
-// its work list, moved zero pages and exited happy.
-func revive(jobs *queue.Queue, runner *ocr.Runner, c *corpus.Corpus, lang string, key corpus.IssueKey, sheets []ocr.Sheet, dead map[string]string) (int, error) {
+// The index comes from jobIDs. A job is filed under a hash of its target and
+// its prompt, so the target alone does not name a file, and the first version
+// of this passed the target and quietly reset nothing: the run printed its work
+// list, moved zero pages and exited happy.
+func revive(jobs *queue.Queue, runner *ocr.Runner, c *corpus.Corpus, lang string, key corpus.IssueKey, sheets []ocr.Sheet, finished map[string]string) (int, error) {
 	moved := 0
 	for _, sheet := range sheets {
 		path := c.PagePath(lang, corpus.PageID{Issue: key, Index: sheet.Index})
 		if _, err := os.Stat(path); err == nil {
 			continue
 		}
-		id, ok := dead[runner.Target(sheet.Index)]
+		id, ok := finished[runner.Target(sheet.Index)]
 		if !ok {
 			continue
 		}
@@ -311,19 +321,32 @@ func revive(jobs *queue.Queue, runner *ocr.Runner, c *corpus.Corpus, lang string
 	return moved, nil
 }
 
-// deadIDs indexes the dead OCR jobs by the page they were reading.
+// jobIDs indexes the OCR jobs in the given states by the page they were
+// reading.
 //
 // One pass over the directory for a whole run. The alternative is a search per
 // page, and the dead list is the small one only until a decade has been through
 // the queue.
-func deadIDs(jobs *queue.Queue) (map[string]string, error) {
-	list, err := jobs.List(queue.StageOCR, queue.Dead)
-	if err != nil {
-		return nil, err
-	}
-	out := make(map[string]string, len(list))
-	for _, job := range list {
-		out[job.Target] = job.ID
+//
+// Which states get indexed is the whole of the difference between aiming a
+// repair pass and rereading. A named sheet with no page file failed, so the
+// job is dead and that is the only list worth walking. A named sheet under
+// --reread had a page a moment ago, which means the job is done, and a done job
+// is the one thing that both Add and the dead list ignore. That is not a corner
+// case, it is the case: a page that is well formed and wrong is exactly the
+// page somebody reaches for --reread to get rid of, and until now the flag
+// deleted it, printed the count it had deleted, queued nothing and left a hole
+// where the bad page had been.
+func jobIDs(jobs *queue.Queue, states ...queue.State) (map[string]string, error) {
+	out := map[string]string{}
+	for _, state := range states {
+		list, err := jobs.List(queue.StageOCR, state)
+		if err != nil {
+			return nil, err
+		}
+		for _, job := range list {
+			out[job.Target] = job.ID
+		}
 	}
 	return out, nil
 }
