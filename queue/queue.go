@@ -329,8 +329,8 @@ func (q *Queue) ids(stage Stage, state State) ([]string, error) {
 // side to fail on: the leased file is what every other worker tests against, so
 // nobody else takes the job, and its lease expires and Reap puts it back.
 //
-// The group is the part of the target before the slash, which for OCR is the
-// book. It is a parameter and not an option because a caller that leases across
+// The group is the volume the target belongs to, which for OCR is the issue.
+// It is a parameter and not an option because a caller that leases across
 // books is a caller that has already gone wrong: an OCR run knows the page
 // number from the target and resolves the image against the book it was started
 // with, so a job from another book reads the wrong file and writes a real page
@@ -430,14 +430,33 @@ func (q *Queue) claim(snapshot Job, host string, expected time.Duration) (Job, b
 	return job, true, nil
 }
 
-// GroupOf is the part of a target before the slash, or the whole target when
-// there is no slash in it.
+// GroupOf is the volume a target belongs to.
+//
+// Two forms, because the corpus this queue was lifted from names a page
+// book/0045 and this one names it kvant_1975_1_p0007. A slash splits at the
+// slash. Otherwise a trailing _p and four digits comes off, which leaves the
+// issue.
+//
+// The second rule is what makes the group worth passing at all here. Without it
+// the group of a Kvant page is the whole page id, every page is its own group,
+// and a runner that asks for one issue is asking for something no job matches.
+// Doing it lexically rather than by parsing the id keeps this package clear of
+// the corpus package, and it reads the job files that are already on disk,
+// which a group written into new jobs would not.
 func GroupOf(target string) string {
-	group, _, ok := strings.Cut(target, "/")
-	if !ok {
+	if group, _, ok := strings.Cut(target, "/"); ok {
+		return group
+	}
+	cut := strings.LastIndex(target, "_p")
+	if cut < 1 || len(target)-cut != len("_p")+4 {
 		return target
 	}
-	return group
+	for _, c := range target[cut+2:] {
+		if c < '0' || c > '9' {
+			return target
+		}
+	}
+	return target[:cut]
 }
 
 // Finish records the result of a leased job.

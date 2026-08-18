@@ -509,8 +509,13 @@ func TestACoverKeepsNoPrintedNumber(t *testing.T) {
 // from the runner files a page of 1980 under whichever issue the runner
 // happened to start on, and the cost report then attributes a year of work to
 // the wrong year.
-func TestTheLedgerLabelsAPageWithItsOwnIssue(t *testing.T) {
-	runner, _, images := setup(t, func(image string, _ int) string {
+// The bug this pins wrote real pages of one issue into another issue's slots,
+// and left no trace of having done it: the path and the front matter were both
+// written from the runner, so they agreed with each other while both were
+// wrong, and every consistency check that compared the two passed. The corpus
+// on the reading box had 230 such slots before the lease was made per issue.
+func TestARunLeavesAPageOfAnotherIssueAlone(t *testing.T) {
+	runner, eng, images := setup(t, func(image string, _ int) string {
 		return page(sheetOf(image))
 	})
 	path := filepath.Join(t.TempDir(), "ocr.jsonl")
@@ -521,7 +526,9 @@ func TestTheLedgerLabelsAPageWithItsOwnIssue(t *testing.T) {
 	runner.Ledger = ledger
 
 	// A job for a page of another issue entirely, put in the queue the way a
-	// revived job arrives rather than the way Enqueue writes one.
+	// revived job arrives rather than the way Enqueue writes one. This is the
+	// shape the repair lane produces: one queue holding several issues, and a
+	// runner opened on one of them.
 	foreign := queue.New(queue.StageOCR, "kvant_1980_2_p0001", strings.Repeat("b", 64), runner.PromptSHA256)
 	foreign.Meta = map[string]string{
 		"image": filepath.Join(images, "0001.jpg"),
@@ -531,7 +538,11 @@ func TestTheLedgerLabelsAPageWithItsOwnIssue(t *testing.T) {
 	if _, err := runner.Queue.Add(foreign); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := runner.Run(context.Background()); err != nil {
+	if _, err := runner.Enqueue(sheets(t, images)); err != nil {
+		t.Fatal(err)
+	}
+	summary, err := runner.Run(context.Background())
+	if err != nil {
 		t.Fatal(err)
 	}
 	// Closed before it is read back, and not left to a defer. Windows will not
@@ -542,24 +553,26 @@ func TestTheLedgerLabelsAPageWithItsOwnIssue(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	if summary.Read != 3 {
+		t.Fatalf("the run read %d pages of its own issue, want three: %s", summary.Read, summary)
+	}
+	if n := eng.count("0001.jpg"); n != 1 {
+		t.Errorf("the first sheet was read %d times, so the foreign job was read as well", n)
+	}
+	job, state, err := runner.Queue.Find(queue.StageOCR, foreign.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state != queue.Pending || job.Attempts != 0 {
+		t.Errorf("the foreign job is %s after %d attempts, want pending and untouched", state, job.Attempts)
+	}
 	entries, err := ocr.ReadLedger(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	var found bool
 	for _, e := range entries {
-		if e.Target != "kvant_1980_2_p0001" {
-			continue
+		if e.Target == foreign.Target {
+			t.Fatalf("a page of 1980 №2 was read by a run of 1975 №1: %+v", e)
 		}
-		found = true
-		if e.Issue != "kvant_1980_2" {
-			t.Errorf("a page of 1980 №2 was filed under %q", e.Issue)
-		}
-		if e.Year != 1980 {
-			t.Errorf("a page of 1980 was filed under year %d", e.Year)
-		}
-	}
-	if !found {
-		t.Fatalf("no ledger line for the foreign page, got %d entries", len(entries))
 	}
 }
