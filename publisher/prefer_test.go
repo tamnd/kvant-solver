@@ -83,3 +83,42 @@ func TestAMisspelledTypedTextIsStillTheArticle(t *testing.T) {
 		t.Fatalf("refused over spelling: %s", why)
 	}
 }
+
+func TestTheTitleGoesOnTopOfTheTypedText(t *testing.T) {
+	// Every article assembled from our own pages has its title as a heading,
+	// because the title is printed on the page. The typed text is the prose
+	// alone, and without this those articles would be the only ones in the
+	// corpus whose body does not say what they are.
+	t.Parallel()
+	got := publisher.Titled("Дифракционная окраска насекомых", "Крылья бабочки переливаются.")
+	want := "## Дифракционная окраска насекомых\n\nКрылья бабочки переливаются."
+	if got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+func TestAMarkerAboveTheTitleStaysAboveIt(t *testing.T) {
+	// A figure at the head of the article is above the title on the page, and
+	// the body says where things are on the page.
+	t.Parallel()
+	got := publisher.Titled("Задачи", "⟦figure⟧\n\n1. Старый пират.")
+	want := "⟦figure⟧\n\n## Задачи\n\n1. Старый пират."
+	if got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+func TestATypedTextThatAlreadyNamesItselfIsLeftAlone(t *testing.T) {
+	t.Parallel()
+	body := "## Задачи\n\n1. Старый пират."
+	if got := publisher.Titled("Задачи", body); got != body {
+		t.Errorf("the title was written twice: %q", got)
+	}
+}
+
+func TestAnArticleWithNoTitleKeepsItsBody(t *testing.T) {
+	t.Parallel()
+	if got := publisher.Titled("", "Крылья бабочки."); got != "Крылья бабочки." {
+		t.Errorf("got %q", got)
+	}
+}
