@@ -11,7 +11,9 @@ import (
 
 	"github.com/tamnd/kvant-solver/assemble"
 	"github.com/tamnd/kvant-solver/corpus"
+	"github.com/tamnd/kvant-solver/fetch"
 	"github.com/tamnd/kvant-solver/manifest"
+	"github.com/tamnd/kvant-solver/publisher"
 )
 
 func runAssemble(args []string) error {
@@ -42,6 +44,14 @@ func runAssemble(args []string) error {
 	if err := store.Read(manifest.TOCFile, toc); err != nil && !errors.Is(err, manifest.ErrMissing) {
 		return err
 	}
+	// The text the publisher typed, where kvant publisher pull has fetched it.
+	// An empty store is the normal state of most of the archive and costs
+	// nothing here, every lookup simply misses.
+	cache, err := fetch.OpenCache(*f.cache)
+	if err != nil {
+		return err
+	}
+	text := publisher.Store{Dir: filepath.Join(cache.Dir, "publisher")}
 
 	for i := range issues {
 		key, err := corpus.ParseIssueKey(issues[i].Key)
@@ -60,13 +70,22 @@ func runAssemble(args []string) error {
 				return err
 			}
 		}
+		typed := 0
 		for _, article := range result.Articles {
-			if err := writeArticle(c, *lang, key, &issues[i], article, read); err != nil {
+			body, extraction, why := preferTyped(text, key, article, read)
+			if why != "" {
+				fmt.Printf("  publisher_fragment %s %s\n", article.Slug, why)
+			}
+			if extraction == corpus.ExtractionPublisher {
+				typed++
+			}
+			article.Body = body
+			if err := writeArticle(c, *lang, key, &issues[i], article, extraction); err != nil {
 				return err
 			}
 		}
-		fmt.Printf("%s: %d pages, %d articles, %d orphans, %d notes\n",
-			issues[i].Key, len(pages), len(result.Articles), len(result.Orphans), len(result.Notes))
+		fmt.Printf("%s: %d pages, %d articles, %d of them the publisher's own text, %d orphans, %d notes\n",
+			issues[i].Key, len(pages), len(result.Articles), typed, len(result.Orphans), len(result.Notes))
 		for _, note := range result.Notes {
 			fmt.Printf("  %s %s %s\n", note.Kind, note.Subject, note.Detail)
 		}
@@ -104,8 +123,33 @@ func readPages(c *corpus.Corpus, lang string, key corpus.IssueKey) ([]assemble.P
 	return pages, read, nil
 }
 
+// preferTyped decides which body an article gets and what it says it is.
+//
+// An article the publisher typed is not read off anything, so it is not a
+// vision reading or a native one whatever its pages were, and the extraction it
+// records is its own. The pages underneath keep saying how they were read,
+// which is the point of pages being the ground truth: the article can change
+// its mind about where its text comes from without any of that being lost.
+func preferTyped(store publisher.Store, key corpus.IssueKey, article assemble.Article, read map[int]string) (body, extraction, why string) {
+	if article.RowSlug == "" {
+		return article.Body, extractionOf(article, read), ""
+	}
+	text, ok, err := store.Get(key.String(), article.RowSlug)
+	if err != nil || !ok {
+		// A store that will not read is a cache problem and not a corpus
+		// problem, and the assembled body is right there. Failing the whole
+		// issue over it would make the better source the fragile one.
+		return article.Body, extractionOf(article, read), ""
+	}
+	chosen, why := publisher.Prefer(article.Body, text)
+	if why != "" || chosen != text {
+		return article.Body, extractionOf(article, read), why
+	}
+	return text, corpus.ExtractionPublisher, ""
+}
+
 // writeArticle puts one assembled article in the corpus.
-func writeArticle(c *corpus.Corpus, lang string, key corpus.IssueKey, iss *manifest.Issue, article assemble.Article, read map[int]string) error {
+func writeArticle(c *corpus.Corpus, lang string, key corpus.IssueKey, iss *manifest.Issue, article assemble.Article, extraction string) error {
 	id, err := corpus.NewArticleID(key, article.Slug)
 	if err != nil {
 		return err
@@ -125,7 +169,7 @@ func writeArticle(c *corpus.Corpus, lang string, key corpus.IssueKey, iss *manif
 		Provenance: corpus.Provenance{
 			Lang:       lang,
 			Source:     scanSource(iss),
-			Extraction: extractionOf(article, read),
+			Extraction: extraction,
 		},
 	}
 	return corpus.Save(c.ArticlePath(lang, id, article.Ordinal), front, article.Body)
