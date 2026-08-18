@@ -10,6 +10,7 @@ package ocr
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 	"unicode"
 
@@ -300,6 +301,23 @@ func checkFolio(text string, expect Expect) (Problem, bool) {
 // averaged 14.3.
 const MaxMixed = 4
 
+// chessMove is a move in the notation this magazine prints, which mixes two
+// alphabets on purpose.
+//
+// Шахматная страничка is a standing rubric and the moves in it are set the
+// Russian way: the piece is a Cyrillic letter and the square is a Latin file
+// and a rank, so Фd3 and Крg1 and Лf1 are correct transcriptions of correct
+// printing. Rule 8 was rejecting the whole page for them. 1975 issue 6 sheet 60
+// is one board and its solution and it came back with 21 of them, read the same
+// way three times, which is what a page the rule is wrong about looks like.
+//
+// The pattern is tight on purpose. A piece letter has to start a word and a
+// Latin file and rank have to close the move, which is a shape no Russian word
+// takes and no misread has produced: dvижении and Funcцию and с怠митр are all
+// still counted. Pawn moves and squares on their own are Latin throughout and
+// were never a problem for a rule that only asks about mixing.
+var chessMove = regexp.MustCompile(`(^|[^\p{L}])(Кр|[КФЛСП])[a-h]?[1-8]?[:×x]?[a-h][1-8]`)
+
 // checkScript is rule 8, and it is here because of a run that passed every
 // other rule and was not a transcription.
 //
@@ -354,7 +372,7 @@ func mixedWords(text string) (int, string) {
 	}
 
 	found, first := 0, ""
-	for _, word := range strings.FieldsFunc(string(runes), func(r rune) bool {
+	for _, word := range strings.FieldsFunc(chessMove.ReplaceAllString(string(runes), "$1 "), func(r rune) bool {
 		return !unicode.IsLetter(r)
 	}) {
 		var cyrillic, other bool
