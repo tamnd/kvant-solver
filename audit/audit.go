@@ -242,6 +242,13 @@ func pages(report *Report, in Input) {
 			report.add(Warn, "mixed_script", where,
 				fmt.Sprintf("%d words mix two alphabets, such as %q", n, first))
 		}
+		// Rule 9, asked of the corpus for the same reason. A failure and not a
+		// warning: a welded word is a page with something wrong in it, and a
+		// decoder that looped is not a page at all.
+		if n, word := ocr.LongestWord(page.Body); n > ocr.MaxWordRunes {
+			report.add(Fail, "runaway", where,
+				fmt.Sprintf("a run of %d letters, %q, so the model was repeating itself", n, clip(word)))
+		}
 	}
 	// Two pages printing the same number is a misread digit, and it is worth a
 	// failure because the page map is built on these and assemble places every
