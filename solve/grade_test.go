@@ -218,3 +218,151 @@ func TestTheReportSaysWhatWasLeftOut(t *testing.T) {
 		}
 	}
 }
+
+// datedProblem is the same problem with the issue that set it known, which is
+// the only thing that turns the anachronism question on.
+func datedProblem() Problem {
+	p := mathProblem()
+	p.Year = 1974
+	return p
+}
+
+// grader answers the marking with the reply given and everything else the way
+// pass does, so that a test can say what came back from the grader and nothing
+// else.
+func grader(reply string) *Engine {
+	return &Engine{Client: &fake{reply: func(stage string, n int) string {
+		if stage == "grade" {
+			return reply
+		}
+		return pass(stage, n)
+	}}}
+}
+
+func TestAMarkingCanGoAgainstUsAndStillSayWeWereRight(t *testing.T) {
+	// Квант printed corrections to its own answers. A run that treats the
+	// printed one as ground truth by definition files our correct solutions as
+	// misses and, worse, never shows anyone which page to go back to.
+	e := grader("Ответы разошлись. В журнале потеряна двойка.\n\nGRADE: INCORRECT\nRIGHT: MARKED")
+	m, err := e.Grade(context.Background(), datedProblem(), Result{Solution: solutionText}, "Ответ: 14.", Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.Grade != Incorrect {
+		t.Fatalf("grade is %q, want INCORRECT: the adjudication must not move the mark", m.Grade)
+	}
+	if m.Right != Marked || !m.Overturns() {
+		t.Fatalf("right is %q and overturns is %v", m.Right, m.Overturns())
+	}
+	var s Scorecard
+	s.Add(Result{ID: m.ID}, m)
+	if s.Overturned != 1 {
+		t.Fatalf("overturned %d, want 1", s.Overturned)
+	}
+	if s.Correct != 0 || s.Incorrect != 1 || s.Score() != 0 {
+		t.Fatalf("the score moved: %d correct, %d incorrect, score %v", s.Correct, s.Incorrect, s.Score())
+	}
+}
+
+func TestAnAdjudicationThatCannotBeReadOverturnsNothing(t *testing.T) {
+	// Defaulting the other way would report this run's own parse failures as
+	// errata in the magazine, which is the one wrong answer here that would
+	// send somebody to the archive to look for a mistake that is ours.
+	if got := Adjudication("Both texts reach the same place."); got != Unclear {
+		t.Fatalf("an unreadable adjudication read as %q, want UNCLEAR", got)
+	}
+	if got := Adjudication("RIGHT: one of MARKED, PRINTED, BOTH\n\nGRADE: CORRECT\nRIGHT: BOTH"); got != Both {
+		t.Fatalf("read as %q, want the answer and not the instruction it quoted back", got)
+	}
+	if !(Marking{Grade: Correct, Right: Marked}).Overturns() == false {
+		t.Fatal("a correct solution cannot overturn the answer it agrees with")
+	}
+}
+
+func TestAMethodTheMagazineDidNotHaveIsRecordedAndNotMarkedDown(t *testing.T) {
+	// The flag is not a fault. A 1974 problem solved with a tool from 1990 is
+	// still solved, and the reason to record it is that a scorecard which cannot
+	// tell the two apart is claiming the solver did what the readers did.
+	e := grader("Ответ верный.\n\nGRADE: CORRECT\nRIGHT: BOTH\nANACHRONISM: базисы Грёбнера")
+	m, err := e.Grade(context.Background(), datedProblem(), Result{Solution: solutionText}, "Ответ: делится.", Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.Grade != Correct || m.Overturns() {
+		t.Fatalf("grade is %q and overturns is %v", m.Grade, m.Overturns())
+	}
+	if m.Anachronism != "базисы Грёбнера" {
+		t.Fatalf("anachronism is %q", m.Anachronism)
+	}
+	var s Scorecard
+	s.Add(Result{ID: m.ID}, m)
+	if s.Anachronistic != 1 || s.Correct != 1 || s.Score() != 1 {
+		t.Fatalf("%d anachronistic, %d correct, score %v", s.Anachronistic, s.Correct, s.Score())
+	}
+}
+
+func TestTheSeveralWaysAGraderSaysThereWasNoAnachronism(t *testing.T) {
+	// Inventing one out of a malformed reply is worse than missing one, because
+	// a name in this column is something a person will go and check.
+	for _, none := range []string{
+		"GRADE: CORRECT\nANACHRONISM: NONE",
+		"GRADE: CORRECT\n**ANACHRONISM:** none.",
+		"GRADE: CORRECT\nANACHRONISM: N/A",
+		"GRADE: CORRECT",
+		"The solution is fine and uses nothing later than the issue.",
+	} {
+		if got := Anachronism(none); got != "" {
+			t.Errorf("%q was read as the method %q", none, got)
+		}
+	}
+	if got := Anachronism("GRADE: CORRECT\n**ANACHRONISM**: the Cauchy-Schwarz inequality"); got != "the Cauchy-Schwarz inequality" {
+		t.Fatalf("read as %q", got)
+	}
+}
+
+func TestTheGraderIsNotAskedAboutAYearItWasNotGiven(t *testing.T) {
+	// Most of the problem corpus knows what issue set it, but not all of it
+	// does, and a grader asked to date a method against nothing will answer
+	// anyway. That answer lands in a column nobody can check.
+	undated, _ := DefaultPrompts{}.Grade(mathProblem(), solutionText, "Ответ: делится.")
+	if strings.Contains(undated, "ANACHRONISM") {
+		t.Fatalf("the grader was asked to date a problem with no year:\n%s", undated)
+	}
+	dated, _ := DefaultPrompts{}.Grade(datedProblem(), solutionText, "Ответ: делится.")
+	for _, want := range []string{"ANACHRONISM", "1974", "RIGHT:"} {
+		if !strings.Contains(dated, want) {
+			t.Fatalf("the grade prompt does not mention %q:\n%s", want, dated)
+		}
+	}
+}
+
+func TestTheYearIsShownToTheGraderAndToNothingElse(t *testing.T) {
+	// Same reasoning as the published solution: the year the problem was set is
+	// a hint about the intended method, and a solver that knows the answer was
+	// meant to come out of 1974 mathematics is being steered.
+	f := &fake{reply: pass}
+	e := &Engine{Client: f}
+	opts, _ := Slow.Apply(Options{})
+	if _, err := e.Solve(context.Background(), datedProblem(), opts); err != nil {
+		t.Fatal(err)
+	}
+	if n := f.sent("1974"); n != 0 {
+		t.Fatalf("the year reached %d of the solving calls", n)
+	}
+}
+
+func TestTheReportNamesTheMarkingsSomebodyHasToRead(t *testing.T) {
+	// Both counts are useless as bare numbers. An overturned marking is a page
+	// to go and check and an anachronism is a solution to go and read, and
+	// neither is findable in a scorecard that only says how many there were.
+	s := Scorecard{Set: "smoke"}
+	s.Add(Result{ID: "M311", Verdict: Pass}, Marking{ID: "M311", Grade: Incorrect, Right: Marked})
+	s.Add(Result{ID: "M312", Verdict: Pass}, Marking{ID: "M312", Grade: Correct, Right: Both,
+		Anachronism: "базисы Грёбнера"})
+	report := s.Report(Compare(nil, nil))
+	for _, want := range []string{"M311", "marked incorrect", "M312: базисы Грёбнера"} {
+		if !strings.Contains(report, want) {
+			t.Fatalf("the report does not mention %q:\n%s", want, report)
+		}
+	}
+}

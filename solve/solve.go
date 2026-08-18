@@ -36,6 +36,12 @@ type Problem struct {
 	ID      string
 	Subject corpus.Subject
 	Text    string
+	// Year the magazine set the problem, or 0 when the file it came from does
+	// not say. No prompt that solves shows it, and it is here for the grader,
+	// which cannot ask whether a solution reached for something the magazine
+	// did not have without a year to hold it to. The grader drops that
+	// question rather than guess when this is 0.
+	Year int
 }
 
 // Validate reports what is missing before any model is called, because a run

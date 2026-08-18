@@ -113,8 +113,15 @@ type SolutionFront struct {
 	Verified               bool    `yaml:"verified"`
 	GradedAgainstPublished bool    `yaml:"graded_against_published,omitempty"`
 	Agreement              string  `yaml:"agreement,omitempty"`
-	Provenance             `yaml:",inline"`
-	Translated             `yaml:",inline"`
+	// RightAnswer is which of the two the grader believed where they differ. It
+	// is separate from Agreement because that one is the mark against what the
+	// magazine printed, and the magazine printed corrections to itself.
+	RightAnswer string `yaml:"right_answer,omitempty"`
+	// Anachronism is a method used here that the magazine did not have when it
+	// set the problem. It is not a fault and it does not change the mark.
+	Anachronism string `yaml:"anachronism,omitempty"`
+	Provenance  `yaml:",inline"`
+	Translated  `yaml:",inline"`
 }
 
 // Front is what the loader and the writer need from any of the four schemas.

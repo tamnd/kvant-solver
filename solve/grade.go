@@ -17,10 +17,32 @@ type Marking struct {
 	// Notes is what the grader said. It is kept because the grade on its own
 	// is not reviewable: a run that reports 60 per cent correct is worth
 	// nothing if nobody can go and read why the other 40 were marked down.
-	Notes string    `yaml:"notes,omitempty"`
-	Model string    `yaml:"model,omitempty"`
-	Usage api.Usage `yaml:"usage,omitempty"`
+	Notes string `yaml:"notes,omitempty"`
+	// Right is which of the two answers the grader believes, and it carries
+	// something only where the two differ. A grade of INCORRECT says the two
+	// texts disagree and says nothing about which one to trust. Квант printed
+	// corrections to its own answers, and a run that took the printed one as
+	// ground truth by definition would file our correct solutions as misses and
+	// never show anyone the page worth going back to.
+	Right string `yaml:"right,omitempty"`
+	// Anachronism is a method the solution used that the magazine did not have
+	// when it set the problem, empty when there was none. It is not a fault and
+	// it does not move the grade. A 1974 problem solved with a tool from 1990 is
+	// still solved, and it is recorded because a scorecard that cannot tell the
+	// two apart is claiming the solver did what the readers of the time did.
+	Anachronism string    `yaml:"anachronism,omitempty"`
+	Model       string    `yaml:"model,omitempty"`
+	Usage       api.Usage `yaml:"usage,omitempty"`
 }
+
+// Overturns reports a marking that went against the solution and then said the
+// solution was the right one anyway.
+//
+// These are the markings to read by hand. Each is either a misprint in the
+// magazine, which is a page to go and check, or a grader talking itself into our
+// answer, which is a prompt to fix. Both need a person, and neither shows up
+// anywhere in the score.
+func (m Marking) Overturns() bool { return m.Right == Marked && m.Grade != Correct }
 
 // Grade marks a finished solution against the solution the magazine printed.
 //
@@ -64,27 +86,36 @@ func (e *Engine) Grade(ctx context.Context, p Problem, res Result, published str
 	}
 	text := strings.TrimSpace(response.Text)
 	return Marking{
-		ID:    p.ID,
-		Grade: ParseGrade(text),
-		Notes: text,
-		Model: response.Model,
-		Usage: response.Usage,
+		ID:          p.ID,
+		Grade:       ParseGrade(text),
+		Right:       Adjudication(text),
+		Anachronism: Anachronism(text),
+		Notes:       text,
+		Model:       response.Model,
+		Usage:       response.Usage,
 	}, nil
 }
 
 // Scorecard is a run over an evaluation set.
 type Scorecard struct {
-	Set       string    `yaml:"set"`
-	Model     string    `yaml:"model,omitempty"`
-	Mode      Mode      `yaml:"mode,omitempty"`
-	Attempted int       `yaml:"attempted"`
-	Verified  int       `yaml:"verified"`
-	Correct   int       `yaml:"correct"`
-	Partial   int       `yaml:"partial"`
-	Incorrect int       `yaml:"incorrect"`
-	Ungraded  int       `yaml:"ungraded"`
-	Usage     api.Usage `yaml:"usage,omitempty"`
-	Markings  []Marking `yaml:"markings,omitempty"`
+	Set       string `yaml:"set"`
+	Model     string `yaml:"model,omitempty"`
+	Mode      Mode   `yaml:"mode,omitempty"`
+	Attempted int    `yaml:"attempted"`
+	Verified  int    `yaml:"verified"`
+	Correct   int    `yaml:"correct"`
+	Partial   int    `yaml:"partial"`
+	Incorrect int    `yaml:"incorrect"`
+	Ungraded  int    `yaml:"ungraded"`
+	// Overturned and Anachronistic are counted apart from the outcomes above
+	// because neither is one. A problem can be marked incorrect and overturned,
+	// or marked correct and solved with a method from thirty years later, and
+	// adding either to the tally of outcomes would make the four columns stop
+	// summing to the number attempted.
+	Overturned    int       `yaml:"overturned,omitempty"`
+	Anachronistic int       `yaml:"anachronistic,omitempty"`
+	Usage         api.Usage `yaml:"usage,omitempty"`
+	Markings      []Marking `yaml:"markings,omitempty"`
 }
 
 // Add records one problem.
@@ -102,6 +133,12 @@ func (s *Scorecard) Add(res Result, m Marking) {
 		s.Incorrect++
 	default:
 		s.Ungraded++
+	}
+	if m.Overturns() {
+		s.Overturned++
+	}
+	if m.Anachronism != "" {
+		s.Anachronistic++
 	}
 	s.Usage = s.Usage.Add(res.Usage).Add(m.Usage)
 	s.Markings = append(s.Markings, m)
@@ -203,6 +240,33 @@ func (s *Scorecard) Report(a Agreement) string {
 			"or came off the scan too damaged to read. They are left out of the score rather than "+
 			"counted as misses, since those are pages this corpus failed to read and not problems "+
 			"the solver got wrong.\n\n", s.Ungraded)
+	}
+	if s.Overturned > 0 {
+		fmt.Fprintf(&b, "## Where the grader sided with us\n\n%d markings went against the "+
+			"solution and then named it the right answer of the two. Each is either something "+
+			"Квант misprinted, something this corpus read off the scan wrong, or a grader that "+
+			"argued itself round, and the three are only told apart by reading the page. None of "+
+			"them move the score, which is against what the magazine printed either way.\n\n",
+			s.Overturned)
+		for _, m := range s.Markings {
+			if m.Overturns() {
+				fmt.Fprintf(&b, "- %s, marked %s\n", m.ID, strings.ToLower(m.Grade))
+			}
+		}
+		b.WriteString("\n")
+	}
+	if s.Anachronistic > 0 {
+		fmt.Fprintf(&b, "## Methods the magazine did not have\n\n%d solutions used something a "+
+			"reader of the issue could not have had. That is not a fault and nothing was marked "+
+			"down for it. It is here because a problem set for schoolchildren and solved with a "+
+			"theorem from thirty years later has not been solved the way the magazine meant it.\n\n",
+			s.Anachronistic)
+		for _, m := range s.Markings {
+			if m.Anachronism != "" {
+				fmt.Fprintf(&b, "- %s: %s\n", m.ID, m.Anachronism)
+			}
+		}
+		b.WriteString("\n")
 	}
 	b.WriteString("## What the judges caught\n\n")
 	fmt.Fprintf(&b, "%d verified and correct, %d verified and wrong, %d unverified and correct, "+
