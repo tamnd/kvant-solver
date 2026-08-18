@@ -37,11 +37,14 @@ func Cost(entries []ocr.Entry) []Spend {
 	byYear := map[int]*Spend{}
 	engines := map[int]map[string]bool{}
 	for _, entry := range entries {
-		spend := byYear[entry.Year]
+		// The year comes off the page the line is about and not off the field it
+		// was written with, which is what heals the lines a repair run mislabelled.
+		year := entry.PageYear()
+		spend := byYear[year]
 		if spend == nil {
-			spend = &Spend{Year: entry.Year}
-			byYear[entry.Year] = spend
-			engines[entry.Year] = map[string]bool{}
+			spend = &Spend{Year: year}
+			byYear[year] = spend
+			engines[year] = map[string]bool{}
 		}
 		spend.Attempts++
 		if entry.OK {
@@ -53,7 +56,7 @@ func Cost(entries []ocr.Entry) []Spend {
 			spend.Usage = spend.Usage.Add(entry.Usage)
 		}
 		if entry.Engine != "" {
-			engines[entry.Year][entry.Engine] = true
+			engines[year][entry.Engine] = true
 		}
 	}
 	out := make([]Spend, 0, len(byYear))

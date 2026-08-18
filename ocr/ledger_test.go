@@ -171,3 +171,19 @@ func TestTheLedgerHoldsALineForEveryAttempt(t *testing.T) {
 		t.Errorf("a line does not say which issue it is from: %+v", back[0])
 	}
 }
+
+// A repair run leases across issues, so until recently the issue and the year
+// on a line were the runner's and not the page's. A ledger is never rewritten,
+// so the lines already written are healed on the way in or not at all.
+func TestTheYearOfALineComesOffThePageAndNotOffTheField(t *testing.T) {
+	mislabelled := ocr.Entry{Target: "kvant_1980_2_p0015", Issue: "kvant_1976_1", Year: 1976}
+	if got := mislabelled.PageYear(); got != 1980 {
+		t.Errorf("a page of 1980 counts towards %d", got)
+	}
+	// A target that is not a page id at all keeps what it was written with,
+	// because there is nothing better to go on.
+	odd := ocr.Entry{Target: "something else entirely", Year: 1975}
+	if got := odd.PageYear(); got != 1975 {
+		t.Errorf("a line with no page id in it came back as %d, want the year it recorded", got)
+	}
+}

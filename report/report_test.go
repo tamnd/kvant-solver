@@ -199,3 +199,26 @@ func TestAPageThatWasReadIsNotAFailure(t *testing.T) {
 		t.Errorf("the list names %s, want the page that is not in the corpus", list[0].Target)
 	}
 }
+
+// The cost report is per year, and until recently a repair run wrote the
+// runner's year onto a page from another one. The ledger is append only, so the
+// report has to read the year off the page rather than trust the field, or a
+// year of work sits on the wrong row for good.
+func TestCostCountsAPageAgainstItsOwnYear(t *testing.T) {
+	spends := report.Cost([]ocr.Entry{
+		{Target: "kvant_1976_1_p0001", Issue: "kvant_1976_1", Year: 1976, OK: true, Seconds: 1},
+		// Read by a repair runner that was opened on 1976.
+		{Target: "kvant_1980_2_p0015", Issue: "kvant_1976_1", Year: 1976, OK: true, Seconds: 2},
+	})
+	if len(spends) != 2 {
+		t.Fatalf("the two years came out as %d row(s): %+v", len(spends), spends)
+	}
+	for _, spend := range spends {
+		if spend.Attempts != 1 {
+			t.Errorf("%d has %d attempts, want the one page it read", spend.Year, spend.Attempts)
+		}
+	}
+	if spends[0].Year != 1976 || spends[1].Year != 1980 {
+		t.Errorf("the years are %d and %d", spends[0].Year, spends[1].Year)
+	}
+}
