@@ -19,7 +19,7 @@ import (
 
 func runReport(args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("report needs a subcommand, which is failures, cost or diff")
+		return fmt.Errorf("report needs a subcommand, which is failures, cost, diff or refs")
 	}
 	switch args[0] {
 	case "failures":
@@ -28,6 +28,8 @@ func runReport(args []string) error {
 		return runReportCost(args[1:])
 	case "diff":
 		return runReportDiff(args[1:])
+	case "refs":
+		return runReportRefs(args[1:])
 	default:
 		return fmt.Errorf("unknown report subcommand %q", args[0])
 	}
