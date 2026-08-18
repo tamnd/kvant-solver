@@ -208,6 +208,39 @@ func TestARejectedPageIsReadAgain(t *testing.T) {
 	}
 }
 
+// The magazine numbers its displayed equations in the margin and a model
+// transcribing that writes \eqno, which is what plain TeX calls it. KaTeX has
+// never implemented it, so a correct reading came back rejected for an
+// undefined control sequence: 233 pages of 1975 died that way, all of them
+// right about the page. The lane rewrites the number on the way past.
+func TestANumberedEquationIsNotAFailure(t *testing.T) {
+	runner, eng, images := setup(t, func(image string, _ int) string {
+		return page(sheetOf(image)) +
+			"\nЧастота и длина волны связаны соотношением\n\n$$c=\\lambda\\nu \\eqno(1)$$\n"
+	})
+	if _, err := runner.Enqueue(sheets(t, images)); err != nil {
+		t.Fatal(err)
+	}
+	summary, err := runner.Run(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if summary.Rejected != 0 {
+		t.Fatalf("got %s, want nothing rejected", summary)
+	}
+	if got := eng.count("0001.jpg"); got != 1 {
+		t.Fatalf("page one was read %d times, want the first answer to have been taken", got)
+	}
+	path := runner.Corpus.PagePath("ru", corpus.PageID{Issue: runner.Issue, Index: 1})
+	body, err := corpus.Load(path, &corpus.PageFront{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(body, `\tag{(1)}`) {
+		t.Errorf("the page reads %q, want the number as \\tag{(1)}", body)
+	}
+}
+
 // Three failures kill the job and put it on the repair queue with the rule that
 // killed it, because a fourth identical attempt buys nothing.
 func TestADeadPageGoesToRepair(t *testing.T) {

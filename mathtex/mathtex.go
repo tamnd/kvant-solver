@@ -236,6 +236,29 @@ func Repair(body string) (string, int, []Refusal) {
 	return b.String(), n, refused
 }
 
+// Numbers rewrites every equation number in a body and changes nothing else.
+//
+// It is the one part of Repair the reading lane wants. A page comes back from
+// the engine and goes straight to the rules, with no repair in between, because
+// a page the rules reject should be read again rather than patched. An equation
+// number is the exception: \eqno is a correct transcription of what is printed
+// and the model has no way to know that the renderer downstream speaks a
+// different dialect, so rejecting the page asks it for a spelling it was never
+// told about. 233 pages of 1975 died on this and every one of them was right.
+func Numbers(body string) string {
+	spans, _ := Split(body)
+	rs := []rune(body)
+	var b strings.Builder
+	at := 0
+	for _, s := range spans {
+		b.WriteString(string(rs[at:s.Start]))
+		at = s.End
+		b.WriteString(number(string(rs[s.Start:s.End]), s.Display))
+	}
+	b.WriteString(string(rs[at:]))
+	return b.String()
+}
+
 // number puts an equation number into the one command KaTeX knows.
 //
 // The magazine numbers a displayed equation in the right margin, usually (1) or

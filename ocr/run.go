@@ -17,6 +17,7 @@ import (
 	"github.com/tamnd/kvant-solver/answerguard"
 	"github.com/tamnd/kvant-solver/api"
 	"github.com/tamnd/kvant-solver/corpus"
+	"github.com/tamnd/kvant-solver/mathtex"
 	"github.com/tamnd/kvant-solver/queue"
 )
 
@@ -313,7 +314,7 @@ func (r *Runner) attempt(ctx context.Context, job queue.Job, spent *meter) (queu
 		return state, nil, orErr(failErr, fmt.Errorf("%s: %s", job.Target, failure))
 	}
 
-	text := answerguard.Normalise(answerguard.Strip(StripToolHeader(raw)))
+	text := mathtex.Numbers(answerguard.Normalise(answerguard.Strip(StripToolHeader(raw))))
 
 	// The folio pass runs before the rules and not after them, because rule 5
 	// is the rule it feeds. A band that cannot be read is not the page's fault
