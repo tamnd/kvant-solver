@@ -44,6 +44,7 @@ func run(args []string) error {
 		{"eval", "eval --set smoke", "draw the set the solver is measured on", runEval},
 		{"fetch", "fetch pages|pdf [--year Y]", "download the scans and the issue PDFs", runFetch},
 		{"issues", "issues sync|list [--deep]", "build and print the issue list", runIssues},
+		{"native", "native --issue K | native check", "read an issue out of its own PDF from 2007 on, and check what it read against the scan", runNative},
 		{"ocr", "ocr --issue K [--workers N]", "read the pages of an issue through a model", runOCR},
 		{"lexicon", "lexicon build|check", "collect the Russian the corpus uses, which is what rule 8 asks", runLexicon},
 		{"people", "people sync", "build the contributor list", runPeople},

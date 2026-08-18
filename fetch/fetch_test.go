@@ -166,6 +166,38 @@ func TestPagesBringsDownTheWholeScan(t *testing.T) {
 	}
 }
 
+func TestAnIndexRunTakesThePageNumbersAndNoPictures(t *testing.T) {
+	// What the native lane needs of the scan from 2007 on: which sheet each
+	// printed page is on. The pictures are of text this project can already
+	// read out of the publisher's own file.
+	srv, hits := server(t)
+	f := fetcher(t, srv)
+	f.IndexOnly = true
+
+	idx, err := f.Pages(context.Background(), issue())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(idx.Sheets) != 4 {
+		t.Fatalf("got %d sheets, the strip names 4", len(idx.Sheets))
+	}
+	if *hits != 0 {
+		t.Errorf("%d sheets were downloaded by a run that wanted the list", *hits)
+	}
+	if one, _ := idx.Get("0001"); one.Page != 1 {
+		t.Errorf("sheet 0001 is page %d", one.Page)
+	}
+	// The list is on disk, because the point of the run is that the next
+	// command can read it.
+	again, err := f.Cache.ReadIndex("kvant_1975_1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(again.Sheets) != 4 {
+		t.Errorf("the cache kept %d sheets", len(again.Sheets))
+	}
+}
+
 func TestTheErrorPageIsNotKeptAsASheet(t *testing.T) {
 	srv, _ := server(t)
 	f := fetcher(t, srv)

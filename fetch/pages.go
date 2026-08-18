@@ -24,6 +24,17 @@ type Fetcher struct {
 	// strip is short. See Pages.
 	Probe bool
 
+	// IndexOnly takes the sheet list off the issue page and downloads none of
+	// the sheets.
+	//
+	// The list is where the printed page numbers are, and from 2007 on that is
+	// all the native lane wants: it reads the issue out of the publisher's own
+	// PDF and needs the scan only to know which sheet each printed page is. The
+	// images are ten gigabytes of pictures of text this project can already
+	// read, so a run that took them would be paying a volunteer run server for
+	// nothing.
+	IndexOnly bool
+
 	// Retries is how many times a sheet is asked for again after the transfer
 	// broke, and Backoff is how long the first wait is. A sweep of a decade is
 	// four thousand requests to a volunteer run server and some of them will
@@ -103,6 +114,14 @@ func (f *Fetcher) Pages(ctx context.Context, iss *manifest.Issue) (*Index, error
 	}
 	for _, s := range page.Sheets {
 		idx.Set(Sheet{Ord: s.Ord, File: s.File, Page: s.Page})
+	}
+
+	if f.IndexOnly {
+		if err := f.Cache.WriteIndex(idx); err != nil {
+			return idx, err
+		}
+		f.Log("%s: %d sheets listed, none fetched", iss.Key, len(idx.Sheets))
+		return idx, nil
 	}
 
 	got, skipped := 0, 0

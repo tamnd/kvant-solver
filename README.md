@@ -46,6 +46,8 @@ kvant issues sync
 kvant fetch pages --issue kvant_1975_1
 kvant fetch pdf --year 2007
 kvant textguard --year 1975
+kvant native --year 2010
+kvant native check --issue kvant_2010_1
 kvant ocr --year 1975 --workers 6
 kvant repair --from 1970 --to 1989
 kvant assemble --issue kvant_1975_1
@@ -55,7 +57,7 @@ kvant report failures
 kvant report cost
 ```
 
-`kvant --help` lists the rest, and `docs/decade-run.md` is how the last five of those fit together over twenty years of issues.
+`kvant --help` lists the rest, `docs/decade-run.md` is how the last five of those fit together over twenty years of issues, and `docs/native-lane.md` is the two `kvant native` lines and why the second one exists.
 
 The scans are tens of gigabytes of JPEG and they do not belong in a repo of text, so they land in a cache outside the checkout: `--cache`, or `KVANT_CACHE`, or the user cache directory. A sheet whose bytes are already there is not asked for again, so a run that broke on issue nine picks up where it stopped.
 
@@ -68,6 +70,7 @@ source        clients for kvant.digital, kvant.mccme.ru and Math-Net.Ru
 fetch         scan and PDF download, content addressed, resumable
 pdfsrc        poppler wrappers
 textguard     decides which extraction path a page takes
+native        the 2007+ issue PDFs read out of their own text layer
 ocr           page prompts, batching, retry, failure classification, the cost ledger
 fleet         SSH, tunnels, lease based work distribution
 queue         durable on disk queue

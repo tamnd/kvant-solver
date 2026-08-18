@@ -106,6 +106,7 @@ func runFetchPages(args []string) error {
 	fs := pflag.NewFlagSet("fetch pages", pflag.ContinueOnError)
 	f := addFetchFlags(fs)
 	noProbe := fs.Bool("no-probe", false, "trust the thumbnail strip and do not look past the last sheet it names")
+	indexOnly := fs.Bool("index-only", false, "take the sheet list and the printed page numbers, and download no sheets")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -117,7 +118,10 @@ func runFetchPages(args []string) error {
 	if err != nil {
 		return err
 	}
-	fetcher.Probe = !*noProbe
+	// An index run downloads nothing, so there is nothing for the probe to look
+	// past the end of and it goes quiet on its own.
+	fetcher.Probe = !*noProbe && !*indexOnly
+	fetcher.IndexOnly = *indexOnly
 	fmt.Printf("%d issues into %s\n", len(issues), cache.Dir)
 
 	ctx := context.Background()
