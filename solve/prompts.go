@@ -239,6 +239,12 @@ changed.
 // This is the only prompt in the package that is shown the published answer,
 // and it runs after the solution is finished and recorded. Nothing it returns
 // can reach back into the solving.
+//
+// It asks for three things and they are three different questions. The grade is
+// always against what the magazine printed, so that the score of a run means the
+// same thing as the score of the run before it. The adjudication is where a
+// misprint can be said out loud without moving the score. The anachronism is not
+// about correctness at all.
 func (DefaultPrompts) Grade(p Problem, solution, published string) (string, string) {
 	var b strings.Builder
 	b.WriteString("Problem:\n\n")
@@ -247,6 +253,14 @@ func (DefaultPrompts) Grade(p Problem, solution, published string) (string, stri
 	b.WriteString(solution)
 	b.WriteString("\n\nThe solution the magazine printed:\n\n")
 	b.WriteString(published)
+	// The last question is dropped rather than asked about an unknown year. A
+	// grader given nothing to date the problem by will answer anyway, and the
+	// answer lands in a column that nobody can check against anything.
+	ask, tail := "", ""
+	if p.Year > 0 {
+		ask = fmt.Sprintf("\n- whether the solution used a method a reader in %d could not have had", p.Year)
+		tail = "\nANACHRONISM: NONE, or the method named in a few words"
+	}
 	return fmt.Sprintf(`You are marking a solution to a %s problem against the one Квант printed when it
 published the answer, two to four issues after it set the problem.
 
@@ -258,18 +272,38 @@ that follows the printed argument and arrives somewhere else is not.
 The printed text came out of a scan and may have lost a formula or a figure. If
 it is too damaged to mark against, say so and grade UNGRADED rather than guess.
 
+Квант printed corrections to its own answers, so the printed one is not right by
+definition. Where the two differ, mark against the printed answer as above and
+then say separately which one you believe. MARKED for the solution you are
+marking, PRINTED for the magazine's, NEITHER where both are wrong, UNCLEAR where
+the printed text is too damaged to tell. Where the two agree, answer BOTH.%s
+
 Report, in this order:
 
 - whether the answers agree
 - if they differ, where the two texts part company
-- whether the route taken is the printed one or a different one
+- if they differ, which of the two you believe and what settles it
+- whether the route taken is the printed one or a different one%s
 
-Then finish with one line, exactly one of:
+Then finish with these lines and nothing after them:
 
-GRADE: CORRECT
-GRADE: INCORRECT
-GRADE: PARTIAL
-GRADE: UNGRADED`, field(p)), b.String()
+GRADE: one of CORRECT, INCORRECT, PARTIAL, UNGRADED
+RIGHT: one of MARKED, PRINTED, BOTH, NEITHER, UNCLEAR%s`, field(p), era(p), ask, tail), b.String()
+}
+
+// era explains what the last question is for, and says nothing when the year is
+// unknown and the question is not being asked.
+func era(p Problem) string {
+	if p.Year <= 0 {
+		return ""
+	}
+	return fmt.Sprintf(`
+
+Say also whether the solution used a method that was not available to a reader of
+the %d issue. This is not a fault and nothing is marked down for it. A problem
+set for schoolchildren and solved with a theorem published fifteen years later is
+still solved, but a scorecard that cannot tell the two apart is claiming the
+solver did what the readers of the time did.`, p.Year)
 }
 
 // verdictLine reads the VERDICT a judge wrote.
@@ -337,4 +371,64 @@ func ParseGrade(text string) string {
 		return Ungraded
 	}
 	return strings.ToUpper(m[len(m)-1][1])
+}
+
+// The answers the grader may name as the right one where the two differ.
+const (
+	// Marked is our solution, and it is the interesting outcome. It means the
+	// grade is a miss and the grader still believes the miss, which is either a
+	// misprint in the magazine or a page this corpus read wrong.
+	Marked = "MARKED"
+	// Printed is the magazine's, which is the ordinary case for a miss.
+	Printed = "PRINTED"
+	// Both is the same answer twice, which is what a correct solution gets.
+	Both = "BOTH"
+	// Neither is two wrong answers, which happens where the printed solution
+	// answers a different reading of the statement than the one we solved.
+	Neither = "NEITHER"
+	// Unclear is the default, and it is also what a damaged printed solution
+	// gets. Nothing is overturned on an unreadable page.
+	Unclear = "UNCLEAR"
+)
+
+var rightLine = regexp.MustCompile(`(?i)RIGHT\s*[:\-]?\s*(MARKED|PRINTED|BOTH|NEITHER|UNCLEAR)`)
+
+// Adjudication reads which of the two answers the grader believes.
+//
+// Unreadable is UNCLEAR rather than an error, because this does not move the
+// score and a grade that parsed is still worth keeping. The one thing it must
+// not do is default to MARKED: that would report a run's own parse failures as
+// errata in the magazine.
+func Adjudication(text string) string {
+	m := rightLine.FindAllStringSubmatch(text, -1)
+	if len(m) == 0 {
+		return Unclear
+	}
+	return strings.ToUpper(m[len(m)-1][1])
+}
+
+// anachronismLine reads the rest of the line as written rather than matching it
+// against a list of methods, because the point of the question is that we do not
+// know in advance what a model will reach for. The asterisks are for a grader
+// that writes the label in bold.
+var anachronismLine = regexp.MustCompile(`(?i)\**ANACHRONISM\**\s*[:\-]?[ \t]*([^\n]*)`)
+
+// Anachronism reads the method the solution used that the magazine did not have,
+// or the empty string for none.
+//
+// Empty for an unreadable reply too, and for each of the several ways a grader
+// says no. This is a flag on a solution that is otherwise fine, so a run that
+// invented one out of a malformed reply would be worse than one that missed it.
+func Anachronism(text string) string {
+	m := anachronismLine.FindAllStringSubmatch(text, -1)
+	if len(m) == 0 {
+		return ""
+	}
+	got := strings.TrimSpace(m[len(m)-1][1])
+	got = strings.TrimSpace(strings.Trim(got, "*_`"))
+	switch strings.ToUpper(strings.TrimRight(got, ".")) {
+	case "", "NONE", "NO", "N/A", "NOT APPLICABLE":
+		return ""
+	}
+	return got
 }

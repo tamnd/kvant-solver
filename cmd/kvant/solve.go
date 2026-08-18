@@ -176,10 +176,19 @@ func readProblem(c *corpus.Corpus, lang, id string) (solve.Problem, string, erro
 	if strings.TrimSpace(statement) == "" {
 		return solve.Problem{}, "", fmt.Errorf("%s has no statement in it", id)
 	}
+	// The year is off the issue that set the problem, not the one that printed
+	// the answer, and it is left at 0 when the key does not parse. Only the
+	// grader is shown it, and it drops its last question rather than ask about a
+	// year it was not given.
+	var year int
+	if key, err := corpus.ParseIssueKey(front.PosedIn); err == nil {
+		year = key.Year
+	}
 	return solve.Problem{
 		ID:      front.ID,
 		Subject: front.Subject,
 		Text:    statement,
+		Year:    year,
 	}, problems.PublishedSolution(body), nil
 }
 
@@ -202,6 +211,8 @@ func writeSolution(c *corpus.Corpus, lang, id, run string, res solve.Result, m s
 		Verified:               res.Verified(),
 		GradedAgainstPublished: m.Grade != solve.Ungraded,
 		Agreement:              strings.ToLower(m.Grade),
+		RightAnswer:            rightAnswer(m),
+		Anachronism:            m.Anachronism,
 		// Extraction is left empty on purpose. The three it knows about are
 		// native, publisher and vision, and all three mean text was recovered
 		// from a page. Nothing was recovered here: this file was written by a
@@ -229,5 +240,23 @@ func body(res solve.Result, m solve.Marking) string {
 	if m.Grade != "" && m.Grade != solve.Ungraded {
 		fmt.Fprintf(&b, "\nСверено с опубликованным решением: %s.\n", strings.ToLower(m.Grade))
 	}
+	if m.Overturns() {
+		b.WriteString("\nОтветы разошлись, и проверяющий счёл верным наш.\n")
+	}
+	if m.Anachronism != "" {
+		fmt.Fprintf(&b, "\nИспользован метод, которого у журнала тогда не было: %s.\n", m.Anachronism)
+	}
 	return b.String()
+}
+
+// rightAnswer is the adjudication as it goes into the file, and it is left out
+// where it says nothing the mark does not. BOTH is what a correct solution gets
+// and UNCLEAR is the grader declining to answer, so writing either would add a
+// field to every solution file that a reader has to learn to skip.
+func rightAnswer(m solve.Marking) string {
+	switch m.Right {
+	case solve.Marked, solve.Printed, solve.Neither:
+		return strings.ToLower(m.Right)
+	}
+	return ""
 }

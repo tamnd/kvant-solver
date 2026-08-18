@@ -125,7 +125,10 @@ func TestSolveHasNowhereToPutTheAnswer(t *testing.T) {
 	// enforced by Problem having no field for a published solution. If somebody
 	// ever adds one this test is what fails, and the comment is what explains
 	// why it should not be added.
-	want := map[string]bool{"ID": true, "Subject": true, "Text": true}
+	// Year is on the list because the grader needs it and there is one struct.
+	// It is the only field here no solving prompt is shown, and the test that
+	// holds that line is the one below this file's fake grader.
+	want := map[string]bool{"ID": true, "Subject": true, "Text": true, "Year": true}
 	got := reflect.TypeOf(Problem{})
 	if got.NumField() != len(want) {
 		t.Fatalf("Problem has %d fields, want the %d the solver is allowed to see",
