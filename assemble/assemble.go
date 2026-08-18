@@ -38,7 +38,12 @@ type Page struct {
 
 // Article is one assembled piece, ready to be written.
 type Article struct {
-	Slug      string
+	Slug string
+	// RowSlug is the site's own slug for the contents row, kept because Slug is
+	// it with the separators normalised and normalising does not go backwards.
+	// The publisher's typed text is filed under the site's spelling, so finding
+	// it later needs the spelling the site used.
+	RowSlug   string
 	Title     string
 	Authors   []string
 	Rubric    string
@@ -186,6 +191,7 @@ func build(key corpus.IssueKey, row manifest.Row, start, end int, byIndex map[in
 	}
 	article.RubricSub = strings.TrimSpace(row.RubricSub)
 	article.Slug = slugOf(row, article.Title, key, ordinal)
+	article.RowSlug = strings.TrimSpace(row.Slug)
 
 	// Where the contents lists the exact pages, use them: an article split by a
 	// full page advert is not contiguous and a range would claim the advert.
