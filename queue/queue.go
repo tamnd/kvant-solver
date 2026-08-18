@@ -352,34 +352,82 @@ func (q *Queue) Lease(stage Stage, host, group string, expected time.Duration) (
 		if group != "" && GroupOf(job.Target) != group {
 			continue
 		}
-		job.Attempts++
-		job.Lease = &Lease{Host: host, Until: q.now().Add(expected + LeaseSlack), PID: os.Getpid()}
-		won, err := q.create(Leased, job)
+		got, won, err := q.claim(job, host, expected)
 		if err != nil {
 			return Job{}, err
 		}
 		if !won {
 			continue // another worker got there first
 		}
-		// Taking the pending file away is the second half of the claim and not
-		// bookkeeping. Winning the link is not enough on its own: a worker
-		// holding a read from a moment ago can win it after the worker that
-		// really had the job has finished and taken its leased file away, and
-		// then the same page goes out twice. Exactly one caller can remove a
-		// given file, so an ENOENT here says somebody else had it and this
-		// worker gives the claim back.
-		if err := removeFile(q.path(stage, Pending, id)); err != nil {
-			if !os.IsNotExist(err) {
-				return Job{}, err
-			}
-			if err := removeFile(q.path(stage, Leased, id)); err != nil && !os.IsNotExist(err) {
-				return Job{}, err
-			}
-			continue
-		}
-		return job, nil
+		return got, nil
 	}
 	return Job{}, ErrEmpty
+}
+
+// claim takes one pending job for a host, and says whether it got it.
+//
+// The snapshot is the job as it was read out of pending, and the whole reason
+// this is its own function is that the snapshot can be out of date by the time
+// the claim lands. It is separate from Lease so that a test can hand it a
+// deliberately old copy, because the window this handles is a few microseconds
+// wide and a test that waits for it to happen by itself finds it on some runs
+// and not on others.
+func (q *Queue) claim(snapshot Job, host string, expected time.Duration) (Job, bool, error) {
+	stage, id := snapshot.Stage, snapshot.ID
+
+	job := snapshot
+	job.Attempts++
+	job.Lease = &Lease{Host: host, Until: q.now().Add(expected + LeaseSlack), PID: os.Getpid()}
+	won, err := q.create(Leased, job)
+	if err != nil {
+		return Job{}, false, err
+	}
+	if !won {
+		return Job{}, false, nil
+	}
+
+	// The claim is won on the name, and what the job says is settled here, after
+	// it, rather than taken from the snapshot. The worker that really held this
+	// job can have failed it back to pending in between, and the claim then lands
+	// on a job that has been tried again since. Going by the snapshot reuses an
+	// attempt number that has already been spent and writes back a history with
+	// the other worker's event missing from it, so a page allowed three attempts
+	// is read four times or more and the dead job stops saying which hosts failed
+	// it. Nothing else can move the file at this point, because the only writer
+	// of a pending file is a Finish by whoever holds the lease, and that is now
+	// this worker.
+	current, err := q.read(Pending, stage, id)
+	switch {
+	case os.IsNotExist(err):
+		// It has gone entirely. The removal below finds the same thing and hands
+		// the claim back.
+	case err != nil:
+		return Job{}, false, err
+	case current.Attempts != snapshot.Attempts || len(current.History) != len(snapshot.History):
+		current.Attempts++
+		current.Lease = job.Lease
+		if err := q.write(Leased, current); err != nil {
+			return Job{}, false, err
+		}
+		job = current
+	}
+
+	// Taking the pending file away is the second half of the claim and not
+	// bookkeeping. Winning the link is not enough on its own: a worker holding a
+	// read from a moment ago can win it after the worker that really had the job
+	// has finished and taken its leased file away, and then the same page goes
+	// out twice. Exactly one caller can remove a given file, so an ENOENT here
+	// says somebody else had it and this worker gives the claim back.
+	if err := removeFile(q.path(stage, Pending, id)); err != nil {
+		if !os.IsNotExist(err) {
+			return Job{}, false, err
+		}
+		if err := removeFile(q.path(stage, Leased, id)); err != nil && !os.IsNotExist(err) {
+			return Job{}, false, err
+		}
+		return Job{}, false, nil
+	}
+	return job, true, nil
 }
 
 // GroupOf is the part of a target before the slash, or the whole target when

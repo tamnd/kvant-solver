@@ -732,3 +732,101 @@ func TestOutstandingIsEveryTargetStillToRun(t *testing.T) {
 		}
 	}
 }
+
+// A worker whose read of a job is a moment old must not spend an attempt that
+// has already been spent.
+//
+// The window is between reading a pending job and winning the claim on it. The
+// worker that really holds the job can fail it back to pending in there, and
+// then this claim lands on a job that has been tried again since. It is a few
+// microseconds wide, so the interleaving is built here rather than waited for:
+// six workers racing for one job find it on most runs and not on all of them,
+// and a regression test that only sometimes notices is not a regression test.
+func TestAClaimBuiltOnAnOldReadDoesNotSpendAnAttemptTwice(t *testing.T) {
+	q := open(t)
+	added := add(t, q, "kvant_1975_1_p0002")
+
+	// A worker reads the job and then stalls before claiming it.
+	stale, err := q.read(Pending, StageOCR, added.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Another worker takes it, fails it, and it goes back to pending.
+	first, err := q.Lease(StageOCR, "quick", "", time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state, err := q.Fail(first, "the page came back wrong"); err != nil || state != Pending {
+		t.Fatalf("the first attempt left the job %s: %v", state, err)
+	}
+
+	// Now the stalled worker's claim lands.
+	got, won, err := q.claim(stale, "slow", time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !won {
+		t.Fatal("the claim was refused, and the job is pending with nothing holding it")
+	}
+	if got.Attempts != 2 {
+		t.Errorf("this is attempt %d, and it is the second time the page has been read", got.Attempts)
+	}
+	if len(got.History) != 1 {
+		t.Errorf("the job remembers %d of the attempts before this one, want the 1 that failed", len(got.History))
+	}
+	if got.Lease == nil || got.Lease.Host != "slow" {
+		t.Errorf("the lease is %+v, want it held by the worker that won the claim", got.Lease)
+	}
+}
+
+// The bound holds when the racing is real and not built by hand.
+func TestAJobGoesOutNoMoreOftenThanItsAttemptBound(t *testing.T) {
+	const rounds, workers = 60, 6
+	for round := range rounds {
+		q, err := Open(t.TempDir())
+		if err != nil {
+			t.Fatal(err)
+		}
+		job := add(t, q, "kvant_1975_1_p0002")
+
+		var mu sync.Mutex
+		leases := 0
+		var group sync.WaitGroup
+		for worker := range workers {
+			group.Go(func() {
+				for {
+					got, err := q.Lease(StageOCR, fmt.Sprintf("w%d", worker), "", time.Minute)
+					if errors.Is(err, ErrEmpty) {
+						return
+					}
+					if err != nil {
+						t.Errorf("Lease: %v", err)
+						return
+					}
+					mu.Lock()
+					leases++
+					mu.Unlock()
+					if _, err := q.Finish(got, false, "the page came back wrong"); err != nil {
+						t.Errorf("Finish: %v", err)
+						return
+					}
+				}
+			})
+		}
+		group.Wait()
+
+		if leases != DefaultMaxAttempts {
+			t.Fatalf("round %d: the job went out %d times, want the %d attempts it is allowed",
+				round, leases, DefaultMaxAttempts)
+		}
+		dead, err := q.read(Dead, StageOCR, job.ID)
+		if err != nil {
+			t.Fatalf("round %d: the job is not dead after %d failures: %v", round, leases, err)
+		}
+		if len(dead.History) != DefaultMaxAttempts {
+			t.Fatalf("round %d: the dead job remembers %d of its %d attempts",
+				round, len(dead.History), leases)
+		}
+	}
+}
