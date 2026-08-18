@@ -15,6 +15,7 @@ import (
 	"unicode"
 
 	"github.com/tamnd/kvant-solver/answerguard"
+	"github.com/tamnd/kvant-solver/lexicon"
 	"github.com/tamnd/kvant-solver/mathtex"
 )
 
@@ -90,6 +91,11 @@ type Options struct {
 	// LaTeX runs rule 7. It is opt-in because it costs a JavaScript engine and
 	// a parse per span, and the other rules catch almost everything.
 	LaTeX TeXChecker
+	// Lexicon narrows rule 8 to the mixed words that are not just a Russian
+	// word spelled in two alphabets. Nil is the rule as it stood before there
+	// was a lexicon, counting every one of them, which is what a corpus with no
+	// lexicon built for it should get.
+	Lexicon *lexicon.Lexicon
 }
 
 // TeXChecker parses a fragment and reports what went wrong. Behind an interface
@@ -153,7 +159,7 @@ func Validate(text string, expect Expect, options Options) []Problem {
 	}
 
 	// Rule 8.
-	if problem, ok := checkScript(body); !ok {
+	if problem, ok := checkScript(body, options.Lexicon); !ok {
 		problems = append(problems, problem)
 	}
 
@@ -299,6 +305,16 @@ func checkFolio(text string, expect Expect) (Problem, bool) {
 // gives unreadable spots, and it sits well clear of both measurements it was
 // set from: a good read of these sheets averages 1.3 a page and the bad one
 // averaged 14.3.
+//
+// It stayed at four when the lexicon narrowed what gets counted, which wants
+// saying, because narrowing the count without moving the number is a loosening.
+// It was left alone because the corpus measures the same either way: over the
+// 977 pages accepted into 1975 and 1976 the most any one of them carries is
+// exactly four unplaceable mixed words, so nothing in the corpus today got
+// there by a margin this moves. What moves is the pages that were thrown away.
+// Of seventeen dead ones read again, fourteen come in at four or under, and the
+// three that do not are Оlimпилад six times over, MEMORIALНОГО COMПЛЕКСА and
+// перpendикularы, which is the rule finding what it is for.
 const MaxMixed = 4
 
 // chessMove is a move in the notation this magazine prints, which mixes two
@@ -339,14 +355,23 @@ var chessMove = regexp.MustCompile(`(^|[^\p{L}])(Кр|[КФЛСП])[a-h]?[1-8]?[
 // see. A model that is loose enough to reach for one alphabet is loose enough
 // to reach for any, so the question is now about Cyrillic mixed with anything
 // rather than about Latin.
-func checkScript(text string) (Problem, bool) {
-	found, first := mixedWords(text)
+//
+// With a lexicon the count is narrower. Reading 1976 through 1981 says most of
+// what rule 8 catches is not a misreading at all: однako and tetraэдра are
+// «однако» and «тетраэдра» with the Latin spelling showing through, and the
+// model that wrote them had read the page correctly. Those are not evidence
+// against a page and counting them meant a page died for a habit. What is left
+// after the lexicon has taken them out is Оlimпилад and MEMORIALНОГО, which are
+// not words, and those are the evidence. See the lexicon package for why a word
+// is only taken out when the corpus already uses the form it resolves to.
+func checkScript(text string, lex *lexicon.Lexicon) (Problem, bool) {
+	found, first := mixedWords(text, lex)
 	if found <= MaxMixed {
 		return Problem{}, true
 	}
 	return Problem{
 		Rule: RuleScript,
-		Detail: fmt.Sprintf("%d words mix two alphabets, such as %q, want at most %d",
+		Detail: fmt.Sprintf("%d words mix two alphabets and are not Russian spelled in two of them, such as %q, want at most %d",
 			found, first, MaxMixed),
 	}, false
 }
@@ -355,14 +380,14 @@ func checkScript(text string) (Problem, bool) {
 // the first one, so the audit can report on a corpus that is already written.
 // The rule above decides whether to accept a page as it is read; this is the
 // same count asked of a page that was accepted a month ago.
-func MixedWords(text string) (int, string) { return mixedWords(text) }
+func MixedWords(text string, lex *lexicon.Lexicon) (int, string) { return mixedWords(text, lex) }
 
 // mixedWords counts the words carrying two alphabets and returns the first.
 //
 // The mathematics is blanked out first. A math span is Latin by definition and
 // touches the Russian around it, so counting words inside one would report
 // every page in the corpus.
-func mixedWords(text string) (int, string) {
+func mixedWords(text string, lex *lexicon.Lexicon) (int, string) {
 	runes := []rune(text)
 	spans, _ := mathtex.Split(text)
 	for _, span := range spans {
@@ -389,11 +414,17 @@ func mixedWords(text string) (int, string) {
 				other = true
 			}
 		}
-		if cyrillic && other {
-			found++
-			if first == "" {
-				first = word
-			}
+		if !cyrillic || !other {
+			continue
+		}
+		// A word the lexicon can turn back into Russian is a spelling and not a
+		// misreading, so it does not count against the page.
+		if lex != nil && lex.Resolves(word) {
+			continue
+		}
+		found++
+		if first == "" {
+			first = word
 		}
 	}
 	return found, first

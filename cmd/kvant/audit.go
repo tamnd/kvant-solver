@@ -12,6 +12,7 @@ import (
 	"github.com/tamnd/kvant-solver/audit"
 	"github.com/tamnd/kvant-solver/corpus"
 	"github.com/tamnd/kvant-solver/katex"
+	"github.com/tamnd/kvant-solver/lexicon"
 	"github.com/tamnd/kvant-solver/manifest"
 	"github.com/tamnd/kvant-solver/prompt"
 )
@@ -50,6 +51,11 @@ func runAudit(args []string) error {
 	// Both prompts are current, so a page read by either is not stale. What is
 	// stale is a page read by something this build no longer carries.
 	in := audit.Input{Prompts: []string{prompt.OCRPageSHA256(), prompt.OCRShortSHA256()}}
+	// The same lexicon the reading lane used, so that the audit asks a page the
+	// question it was accepted under rather than a stricter one.
+	if in.Lexicon, err = lexicon.Open(c.Root); err != nil {
+		return err
+	}
 	if *checkTeX {
 		renderer, err := katex.New()
 		if err != nil {

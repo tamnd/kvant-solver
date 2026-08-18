@@ -22,6 +22,7 @@ import (
 	"strings"
 
 	"github.com/tamnd/kvant-solver/corpus"
+	"github.com/tamnd/kvant-solver/lexicon"
 	"github.com/tamnd/kvant-solver/manifest"
 	"github.com/tamnd/kvant-solver/mathtex"
 	"github.com/tamnd/kvant-solver/ocr"
@@ -148,6 +149,11 @@ type Input struct {
 	// LaTeX is the renderer. Nil skips the formula rule, which is what a quick
 	// pass over a whole year does; the sign-off run always passes one.
 	LaTeX ocr.TeXChecker
+	// Lexicon narrows the mixed script rule the same way it narrows rule 8 as a
+	// page is read, so that the audit asks a page in the corpus the question the
+	// reading lane asked it. Nil counts every mixed word, which is the older and
+	// noisier reading of the same corpus.
+	Lexicon *lexicon.Lexicon
 }
 
 // Issue audits one issue.
@@ -238,9 +244,9 @@ func pages(report *Report, in Input) {
 		// result is the right length, in the right language and correctly
 		// paginated. A run that was accepted before this rule existed is only
 		// found by looking.
-		if n, first := ocr.MixedWords(page.Body); n > ocr.MaxMixed {
+		if n, first := ocr.MixedWords(page.Body, in.Lexicon); n > ocr.MaxMixed {
 			report.add(Warn, "mixed_script", where,
-				fmt.Sprintf("%d words mix two alphabets, such as %q", n, first))
+				fmt.Sprintf("%d words mix two alphabets and are not Russian spelled in two of them, such as %q", n, first))
 		}
 		// Rule 9, asked of the corpus for the same reason. A failure and not a
 		// warning: a welded word is a page with something wrong in it, and a
