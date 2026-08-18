@@ -13,6 +13,7 @@ import (
 	"github.com/tamnd/kvant-solver/corpus"
 	"github.com/tamnd/kvant-solver/fetch"
 	"github.com/tamnd/kvant-solver/katex"
+	"github.com/tamnd/kvant-solver/lexicon"
 	"github.com/tamnd/kvant-solver/manifest"
 	"github.com/tamnd/kvant-solver/ocr"
 	"github.com/tamnd/kvant-solver/queue"
@@ -59,6 +60,13 @@ func runOCR(args []string) error {
 	}
 
 	options := ocr.Options{}
+	// The lexicon of the corpus being written into, so that rule 8 asks about
+	// the words this archive uses. A corpus with none gets the rule as it was.
+	lex, err := lexicon.Open(c.Root)
+	if err != nil {
+		return err
+	}
+	options.Lexicon = lex
 	if *checkTeX {
 		// One renderer for the whole run. It is safe to share and loading the
 		// script costs a tenth of a second, which is not worth paying per page.

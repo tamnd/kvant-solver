@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/tamnd/kvant-solver/lexicon"
 	"github.com/tamnd/kvant-solver/ocr"
 )
 
@@ -247,5 +248,58 @@ func TestChessNotationDoesNotHideAWeldedWord(t *testing.T) {
 	}
 	if !found {
 		t.Fatal("a page with five welded words was accepted because it also had chess on it")
+	}
+}
+
+// The measurement rule 8 was narrowed for. Every one of these five words is a
+// Russian word the model spelled with Latin letters through the middle, so the
+// page it came off was read correctly and the old count killed it anyway.
+func TestRussianSpelledInTwoAlphabetsIsNotCountedAgainstAPage(t *testing.T) {
+	text := page(2) + "\nПостроим перpendикулярно к оси, и tetraэдра здесь " +
+		"нет, однako на олимпiadы по mатематической физике это бывает.\n"
+
+	if problems := ocr.Validate(text, body(t), ocr.Options{}); len(problems) == 0 {
+		t.Fatal("five welded words were accepted with no lexicon, so this test proves nothing")
+	}
+
+	options := ocr.Options{Lexicon: lexicon.New([]string{
+		"перпендикулярно", "тетраэдра", "однако", "олимпиады", "математической",
+	})}
+	for _, problem := range ocr.Validate(text, body(t), options) {
+		if problem.Rule == ocr.RuleScript {
+			t.Fatalf("a page of Russian spelled in two alphabets was rejected: %s", problem.Detail)
+		}
+	}
+}
+
+// The other half of it. A lexicon must not turn rule 8 off: what it takes out
+// is the spellings, and what is left is still the evidence the rule exists for.
+func TestAGarbledPageIsStillRejectedWithALexicon(t *testing.T) {
+	text := page(2) + "\nЗдесь Оlimпилад и MEMORIALНОГО COMПЛЕКСА, а также " +
+		"перpendикularы и непrivibuous в одном предложении.\n"
+
+	options := ocr.Options{Lexicon: lexicon.New([]string{
+		"перпендикулярно", "тетраэдра", "однако", "олимпиады", "математической",
+	})}
+	problems := ocr.Validate(text, body(t), options)
+	if len(problems) == 0 {
+		t.Fatal("a page of words that are not words in any alphabet was accepted")
+	}
+	if problems[0].Rule != ocr.RuleScript {
+		t.Fatalf("rejected by %s, want %s", problems[0].Rule, ocr.RuleScript)
+	}
+}
+
+// A lexicon narrows rule 8 and nothing else, so a corpus that has none is read
+// under exactly the rule that was there before there was one.
+func TestNoLexiconIsTheOlderRule(t *testing.T) {
+	text := page(2) + "\nПостроим перpendикулярно к оси, и tetraэдра здесь " +
+		"нет, однako на олимпiadы по mатематической физике это бывает.\n"
+
+	with := ocr.Validate(text, body(t), ocr.Options{Lexicon: lexicon.New(nil)})
+	without := ocr.Validate(text, body(t), ocr.Options{})
+	if len(with) != len(without) {
+		t.Errorf("an empty lexicon found %d problems and no lexicon found %d, want the same",
+			len(with), len(without))
 	}
 }

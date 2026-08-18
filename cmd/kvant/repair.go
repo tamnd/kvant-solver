@@ -14,6 +14,7 @@ import (
 	"github.com/tamnd/kvant-solver/corpus"
 	"github.com/tamnd/kvant-solver/fetch"
 	"github.com/tamnd/kvant-solver/katex"
+	"github.com/tamnd/kvant-solver/lexicon"
 	"github.com/tamnd/kvant-solver/manifest"
 	"github.com/tamnd/kvant-solver/ocr"
 	"github.com/tamnd/kvant-solver/queue"
@@ -120,6 +121,13 @@ func runRepair(args []string) error {
 		return err
 	}
 	options := ocr.Options{}
+	// The lexicon of the corpus being written into, so that rule 8 asks about
+	// the words this archive uses. A corpus with none gets the rule as it was.
+	lex, err := lexicon.Open(c.Root)
+	if err != nil {
+		return err
+	}
+	options.Lexicon = lex
 	if *checkTeX {
 		renderer, err := katex.New()
 		if err != nil {

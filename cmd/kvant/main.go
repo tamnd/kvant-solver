@@ -44,6 +44,7 @@ func run(args []string) error {
 		{"fetch", "fetch pages|pdf [--year Y]", "download the scans and the issue PDFs", runFetch},
 		{"issues", "issues sync|list [--deep]", "build and print the issue list", runIssues},
 		{"ocr", "ocr --issue K [--workers N]", "read the pages of an issue through a model", runOCR},
+		{"lexicon", "lexicon build|check", "collect the Russian the corpus uses, which is what rule 8 asks", runLexicon},
 		{"people", "people sync", "build the contributor list", runPeople},
 		{"repair", "repair [--from Y --to Y]", "read the dead pages through another lane", runRepair},
 		{"publisher", "publisher [--from Y --to Y]", "download the text the archive already holds", runPublisher},
