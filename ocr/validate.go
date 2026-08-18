@@ -45,6 +45,7 @@ const (
 	RuleIllegible Rule = "illegible" // 6, too many unreadable spots
 	RuleLaTeX     Rule = "latex"     // 7, a math span does not parse
 	RuleScript    Rule = "script"    // 8, Latin welded into the middle of Russian words
+	RuleRunaway   Rule = "runaway"   // 9, the decoder got stuck and repeated itself
 )
 
 // Problem is one reason a page was not accepted.
@@ -146,6 +147,11 @@ func Validate(text string, expect Expect, options Options) []Problem {
 
 	// Rule 8.
 	if problem, ok := checkScript(body); !ok {
+		problems = append(problems, problem)
+	}
+
+	// Rule 9.
+	if problem, ok := checkRunaway(body); !ok {
 		problems = append(problems, problem)
 	}
 
@@ -304,6 +310,60 @@ func mixedWords(text string) (int, string) {
 		}
 	}
 	return found, first
+}
+
+// MaxWordRunes is the longest run of letters that can still be a word.
+//
+// The longest one in the 891 pages this was set from is 33 letters, and that
+// one is itself a misread, некоторыхfundamentальныхпроблемах with the spaces
+// eaten. The longest honest Russian on those pages is 29. Above that the
+// measurements stop: the next four are 48, 938, 2257 and 2917, and all four are
+// a decoder that got stuck. Forty leaves the real text a third more room than
+// it has ever used and still sits twenty times below the smallest failure.
+const MaxWordRunes = 40
+
+// checkRunaway is rule 9, and it is here because three pages of 1975 went into
+// the corpus as немесямедысимедысимедысимедыси for two thousand nine hundred
+// letters.
+//
+// A served model decoding greedily can fall into a loop and emit the same
+// syllable until it runs out of context. It is the ugliest failure in the set
+// and it was the only one no rule could see. The page is the right length,
+// because it is far too long rather than too short. The mathematics balances,
+// because there is none left. The language is Russian, the folio is right, and
+// rule 8 is blind to it because a loop in Cyrillic never leaves the alphabet.
+// One of the three was a 102 KB page file next to a median of 3 KB.
+//
+// The signal is not repetition, which is expensive to look for and which real
+// text does. It is that no word is this long. A run of letters past
+// MaxWordRunes is not a word in any language this magazine prints, so whatever
+// produced it was not reading.
+func checkRunaway(text string) (Problem, bool) {
+	longest, word := LongestWord(text)
+	if longest <= MaxWordRunes {
+		return Problem{}, true
+	}
+	return Problem{
+		Rule: RuleRunaway,
+		Detail: fmt.Sprintf("a run of %d letters, %q, and no word is that long, so the model was repeating itself",
+			longest, clip(word)),
+	}, false
+}
+
+// LongestWord returns the longest run of letters on a page and how long it is.
+//
+// Exported for the same reason MixedWords is: the audit asks it of pages that
+// were written before the rule existed, and three of those are in the corpus.
+func LongestWord(text string) (int, string) {
+	longest, found := 0, ""
+	for _, word := range strings.FieldsFunc(text, func(r rune) bool {
+		return !unicode.IsLetter(r)
+	}) {
+		if n := len([]rune(word)); n > longest {
+			longest, found = n, word
+		}
+	}
+	return longest, found
 }
 
 // checkLaTeX is rule 7. Every span on the page is parsed, not a sample: a page

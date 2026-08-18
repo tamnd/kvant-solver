@@ -90,3 +90,56 @@ func TestAWordCarryingACharacterFromAThirdScriptIsRejected(t *testing.T) {
 		t.Fatal("a page with Han and Greek welded into Russian words was accepted")
 	}
 }
+
+// Rule 9 exists because of three pages that went into the corpus and should
+// not have. A model decoding greedily fell into a loop and emitted the same
+// syllable for two thousand nine hundred letters, and every other rule passed
+// it: the page is long rather than short, there is no mathematics left to
+// unbalance, the folio is right, and a loop in Cyrillic never leaves the
+// alphabet for rule 8 to notice.
+func TestARunawayDecoderIsCaught(t *testing.T) {
+	cases := []struct {
+		name string
+		word string
+		want bool
+	}{
+		{"a syllable repeated to the end of the context", strings.Repeat("медыси", 400), false},
+		{"two letters repeated", strings.Repeat("зы", 800), false},
+		{"the longest real word in the corpus", "центростремительнымускорением", true},
+		{"a misread with the spaces eaten", "некоторыхfundamentальныхпроблемах", true},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			text := page(2) + "\n\n" + c.word + " и дальше обычный текст страницы.\n"
+			problems := ocr.Validate(text, body(t), ocr.Options{})
+			runaway := false
+			for _, p := range problems {
+				if p.Rule == ocr.RuleRunaway {
+					runaway = true
+				}
+			}
+			if runaway == c.want {
+				t.Fatalf("rule 9 said %v, want %v, on %d letters", runaway, !c.want, len([]rune(c.word)))
+			}
+		})
+	}
+}
+
+// The audit has to ask the same question of pages written before the rule
+// existed, which is what LongestWord is for.
+func TestLongestWordFindsTheRun(t *testing.T) {
+	n, word := ocr.LongestWord("Обычная строка, а затем " + strings.Repeat("зы", 50) + " и конец.")
+	if n != 100 {
+		t.Fatalf("the longest run is %d letters, want 100", n)
+	}
+	if !strings.HasPrefix(word, "зызы") {
+		t.Fatalf("got %q, want the repeated run", clipTest(word))
+	}
+}
+
+func clipTest(s string) string {
+	if r := []rune(s); len(r) > 20 {
+		return string(r[:20]) + "..."
+	}
+	return s
+}
