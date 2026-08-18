@@ -27,6 +27,12 @@ import (
 // run wrote and can be built again on a train; this asks a charity's server for
 // a page at a time with a delay between, and it stops where it got to.
 func runPublisher(args []string) error {
+	// The one subcommand, which fetches all of the text rather than a sample of
+	// it and keeps it to be read from rather than to be measured against.
+	if len(args) > 0 && args[0] == "pull" {
+		return runPublisherPull(args[1:])
+	}
+
 	fs := pflag.NewFlagSet("publisher", pflag.ContinueOnError)
 	f := addFetchFlags(fs)
 	from := fs.Int("from", 0, "first year to fetch, for a range rather than a list")
@@ -96,29 +102,21 @@ func runPublisher(args []string) error {
 				continue
 			}
 		}
-		article, err := client.Article(ctx, candidate.URL, candidate.Slug)
-		if err != nil {
+		ok, err := pullText(ctx, client, text, candidate)
+		switch {
+		case err != nil:
 			// One article that will not load is not a run. The contents said
 			// the text was there and the page says otherwise, which is worth
 			// printing and worth carrying on past.
 			fmt.Printf("  %s %s: %v\n", candidate.Issue, candidate.Slug, err)
 			missing++
-			continue
-		}
-		if !article.HasText {
+		case !ok:
 			fmt.Printf("  %s %s: the contents said there is text and the page carries none\n",
 				candidate.Issue, candidate.Slug)
 			missing++
-			continue
+		default:
+			fetched++
 		}
-		md, err := publisher.Markdown(article.Text)
-		if err != nil {
-			return err
-		}
-		if err := text.Put(candidate.Issue, candidate.Slug, md); err != nil {
-			return err
-		}
-		fetched++
 	}
 	fmt.Printf("%d fetched, %d already here, %d the site does not carry after all\n", fetched, held, missing)
 	return nil
