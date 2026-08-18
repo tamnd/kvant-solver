@@ -73,6 +73,8 @@ func Build(articles []Article) Result {
 	// its own, so inventing provenance for it would be a lie, and leaving it
 	// blank would make the corpus validator right to complain.
 	prov := map[corpus.ProblemID]corpus.Provenance{}
+	claimed := claims(sorted)
+	carried := map[string]map[corpus.ProblemID]bool{}
 
 	for _, art := range sorted {
 		kind, ok := KindOf(art.Front.Title)
@@ -85,9 +87,29 @@ func Build(articles []Article) Result {
 			}
 			continue
 		}
-		found := map[corpus.ProblemID]bool{}
+		promised := map[corpus.ProblemID]bool{}
+		for _, id := range Promised(art.Front.Title) {
+			promised[id] = true
+		}
+		found := carried[art.Front.Issue]
+		if found == nil {
+			found = map[corpus.ProblemID]bool{}
+			carried[art.Front.Issue] = found
+		}
 		for _, item := range Split(art.Body, kind) {
 			found[item.ID] = true
+			// Which half this is, is the heading's to say and not the page's.
+			// Assembly cuts at the page and the magazine cuts at the article, so
+			// the last two problems of a Задачи spread routinely land on the page
+			// that opens the Решения article next to it, where they look exactly
+			// like published answers. Where another heading in the same issue
+			// claimed the number and this one did not, that heading is believed.
+			kind := kind
+			if !promised[item.ID] {
+				if k, ok := claimed[art.Front.Issue][item.ID]; ok && k != kind {
+					kind = k
+				}
+			}
 			entry := entries[item.ID]
 			if entry == nil {
 				entry = &Entry{
@@ -129,14 +151,27 @@ func Build(articles []Article) Result {
 				entry.Authors = art.Front.Authors
 			}
 		}
-		// What the heading promised and the body did not deliver.
+	}
+
+	// What the headings promised and no page of the issue delivered.
+	//
+	// Taken over the issue rather than over the article because the problem the
+	// heading names is often two pages further on, in the next article along.
+	// Asking each article for its own promises reported those as missing while
+	// the words were sitting in the corpus, which made the gap list read like a
+	// reading failure when it was a page boundary.
+	for _, art := range sorted {
+		kind, ok := KindOf(art.Front.Title)
+		if !ok {
+			continue
+		}
 		for _, id := range Promised(art.Front.Title) {
-			if !found[id] {
+			if !carried[art.Front.Issue][id] {
 				res.Gaps = append(res.Gaps, Gap{
 					ID:     id.String(),
 					Issue:  art.Front.Issue,
 					Kind:   kind,
-					Reason: "the heading lists it and the page does not carry it",
+					Reason: "the heading lists it and no page of the issue carries it",
 				})
 			}
 		}
@@ -176,6 +211,43 @@ func Build(articles []Article) Result {
 		return res.Gaps[i].ID < res.Gaps[j].ID
 	})
 	return res
+}
+
+// claims is every number a heading laid claim to, by issue, and which half it
+// claimed it as.
+//
+// This is read before any body is, because the heading is the claim and the
+// body is the evidence, and the evidence here arrives on whatever page the
+// typesetter had room for. A number two headings in the same issue claim as
+// different halves is dropped rather than guessed at: neither of them can
+// correct the other, and the page the words are on is then left to speak for
+// itself.
+func claims(articles []Article) map[string]map[corpus.ProblemID]Kind {
+	out := map[string]map[corpus.ProblemID]Kind{}
+	conflict := map[string]map[corpus.ProblemID]bool{}
+	for _, art := range articles {
+		kind, ok := KindOf(art.Front.Title)
+		if !ok {
+			continue
+		}
+		issue := art.Front.Issue
+		if out[issue] == nil {
+			out[issue] = map[corpus.ProblemID]Kind{}
+			conflict[issue] = map[corpus.ProblemID]bool{}
+		}
+		for _, id := range Promised(art.Front.Title) {
+			if conflict[issue][id] {
+				continue
+			}
+			if k, seen := out[issue][id]; seen && k != kind {
+				conflict[issue][id] = true
+				delete(out[issue], id)
+				continue
+			}
+			out[issue][id] = kind
+		}
+	}
+	return out
 }
 
 // credit puts the reader counts onto the problems they belong to.

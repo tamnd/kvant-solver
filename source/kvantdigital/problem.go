@@ -150,11 +150,13 @@ func ParseProblem(r io.Reader) (*Problem, error) {
 	p.ID = ProblemID(subject, number)
 	p.URL = ProblemURL(p.ID[:1], number)
 
+	var posed bool
 	doc.Find(".box--block").Each(func(_ int, block *goquery.Selection) {
 		heading := clean(block.Find("h2 .no-copy").First().Text())
 		switch {
 		case strings.HasPrefix(heading, "Условие"):
 			p.Condition = readPart(block, heading)
+			posed = true
 		case strings.HasPrefix(heading, "Решение"):
 			part := readPart(block, heading)
 			p.Solution = &part
@@ -162,8 +164,14 @@ func ParseProblem(r io.Reader) (*Problem, error) {
 			readProblemMeta(block, p)
 		}
 	})
-	if p.Condition.Text == "" {
-		return nil, fmt.Errorf("%s: no condition text on the page", p.ID)
+	// A page with the condition block and no words in it is not a page the
+	// markup has moved on: it is a problem the site has indexed and not typed,
+	// which is most of the physics series. The metadata block still says which
+	// issue printed each half, and that reference is worth having on its own.
+	// The error is kept for a page with no condition block at all, which is the
+	// only case where the reading has actually failed.
+	if !posed {
+		return nil, fmt.Errorf("%s: no condition on the page, the markup has probably moved", p.ID)
 	}
 	return p, nil
 }

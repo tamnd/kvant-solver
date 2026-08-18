@@ -284,3 +284,97 @@ func TestTheRubricIsRecordedOffTheArticle(t *testing.T) {
 		t.Fatalf("M302 rubric is %q, want the printed heading as the fallback", got["M302"])
 	}
 }
+
+func TestAProblemThatSpilledOntoTheNextArticlesPageIsStillPosed(t *testing.T) {
+	// The real case this was written for: 1975 issue 8. The Задачи spread
+	// promises Ф348—Ф352 and the last two of them are printed on page 51, which
+	// assembly gives to the Решения article that starts there. Read off the page
+	// alone they look like published answers, and М301 gets a solution that is
+	// really somebody else's problem.
+	articles := []Article{
+		{
+			Path:  "content/ru/1975/08/articles/11_zadachi.md",
+			Front: corpus.ArticleFront{Issue: "kvant_1975_8", Year: 1975, Number: "8", Title: "Задачи М336—М337; Ф348—Ф349", PageLabels: "49-50"},
+			Body:  "М336. Первая.\n\nМ337. Вторая.\n\nФ348. Третья.",
+		},
+		{
+			Path:  "content/ru/1975/08/articles/12_resheniya.md",
+			Front: corpus.ArticleFront{Issue: "kvant_1975_8", Year: 1975, Number: "8", Title: "Решения задач М301—М302", PageLabels: "51-53"},
+			Body:  "Ф349. Четвёртая.\n\nМ301. Ответ на первую.\n\nМ302. Ответ на вторую.",
+		},
+	}
+	res := Build(articles)
+	byID := map[string]Entry{}
+	for _, e := range res.Manifest.Entries {
+		byID[e.ID] = e
+	}
+	f349 := byID["F349"]
+	if f349.Solved != nil {
+		t.Fatalf("F349 was filed as a published solution: %+v", f349.Solved)
+	}
+	if f349.Posed == nil || f349.Posed.Issue != "kvant_1975_8" {
+		t.Fatalf("F349 posed in %+v, want kvant_1975_8", f349.Posed)
+	}
+	// The words are on the Решения page and the printing has to say so, because
+	// that is the file somebody opens to check it.
+	if f349.Posed.Article != "content/ru/1975/08/articles/12_resheniya.md" {
+		t.Fatalf("F349 points at %q, which is not the page carrying it", f349.Posed.Article)
+	}
+	if byID["M301"].Solved == nil {
+		t.Fatal("M301 is a real solution on that page and should still be one")
+	}
+	for _, g := range res.Gaps {
+		if strings.Contains(g.Reason, "heading") {
+			t.Fatalf("the issue carries everything its headings promised, got %v", g)
+		}
+	}
+}
+
+func TestTwoHeadingsClaimingTheSameNumberLeaveThePageToSpeak(t *testing.T) {
+	// One heading calls М337 a problem and another calls it an answer. Neither
+	// can correct the other, so the article the words are actually on decides,
+	// which is what would happen if no heading had claimed it at all.
+	articles := []Article{
+		{
+			Front: corpus.ArticleFront{Issue: "kvant_1975_8", Year: 1975, Number: "8", Title: "Задачи М336—М337"},
+			Body:  "М336. Первая.",
+		},
+		{
+			Front: corpus.ArticleFront{Issue: "kvant_1975_8", Year: 1975, Number: "8", Title: "Решения задач М337"},
+			Body:  "Пустая страница.",
+		},
+		{
+			Front: corpus.ArticleFront{Issue: "kvant_1975_8", Year: 1975, Number: "8", Title: "Решения задач М301"},
+			Body:  "М337. Спорная.\n\nМ301. Ответ.",
+		},
+	}
+	res := Build(articles)
+	byID := map[string]Entry{}
+	for _, e := range res.Manifest.Entries {
+		byID[e.ID] = e
+	}
+	if byID["M337"].Posed != nil {
+		t.Fatalf("with the claims in conflict the page decides, got %+v", byID["M337"].Posed)
+	}
+	if byID["M337"].Solved == nil {
+		t.Fatalf("M337 should be filed where its words are: %+v", byID["M337"])
+	}
+}
+
+func TestAPromisedNumberOnAnotherPageOfTheIssueIsNotAGap(t *testing.T) {
+	articles := []Article{
+		{
+			Front: corpus.ArticleFront{Issue: "kvant_1975_8", Year: 1975, Number: "8", Title: "Задачи М336—М337"},
+			Body:  "М336. Первая.",
+		},
+		{
+			Front: corpus.ArticleFront{Issue: "kvant_1975_8", Year: 1975, Number: "8", Title: "Решения задач М301"},
+			Body:  "М337. Вторая.\n\nМ301. Ответ.",
+		},
+	}
+	for _, g := range Build(articles).Gaps {
+		if strings.Contains(g.Reason, "heading") {
+			t.Fatalf("M337 is in the issue, on the next page along, got %v", g)
+		}
+	}
+}
