@@ -97,9 +97,27 @@ func (c Command) Read(ctx context.Context, image string) (string, error) {
 		if ctx.Err() != nil {
 			return "", fmt.Errorf("read %s: %w after %s", filepath.Base(image), ctx.Err(), timeout)
 		}
-		return "", fmt.Errorf("read %s: %w: %s", filepath.Base(image), err, condense(errs.String()))
+		return "", fmt.Errorf("read %s: %w: %s", filepath.Base(image), err, said(errs.String(), out.String()))
 	}
 	return out.String(), nil
+}
+
+// said is what a failed program had to say for itself.
+//
+// Standard error first, because that is where a program is supposed to put it,
+// and standard output when there is nothing there. A CLI that talks to a person
+// writes its own errors on standard output with everything else, and dropping
+// them left a repair pass printing "exit status 1:" seven hundred times with
+// nothing after the colon, which says only that something went wrong and never
+// what.
+func said(errs, out string) string {
+	if text := condense(errs); text != "" {
+		return text
+	}
+	if text := condense(out); text != "" {
+		return text
+	}
+	return "and said nothing"
 }
 
 // ask is the prompt as the program receives it.
