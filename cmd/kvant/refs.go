@@ -1,27 +1,32 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/spf13/pflag"
 
 	"github.com/tamnd/kvant-solver/corpus"
 	"github.com/tamnd/kvant-solver/refs"
+	"github.com/tamnd/kvant-solver/source/mathnetru"
 )
 
 func runRefs(args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("refs needs a subcommand, which is build or show")
+		return fmt.Errorf("refs needs a subcommand, which is build, show or mathnet")
 	}
 	switch args[0] {
 	case "build":
 		return runRefsBuild(args[1:])
 	case "show":
 		return runRefsShow(args[1:])
+	case "mathnet":
+		return runRefsMathNet(args[1:])
 	default:
 		return fmt.Errorf("unknown refs subcommand %q", args[0])
 	}
@@ -91,6 +96,136 @@ func runRefsBuild(args []string) error {
 			rate*100, refs.Threshold*100)
 	}
 	return nil
+}
+
+// runRefsMathNet writes manifests/refs/mathnet.yaml, which ties every Kvant
+// article mathnet.ru holds to our tag for the same article.
+//
+// It fetches one page per issue and none per article. The issue page already
+// carries the title, the byline, the page range and the permanent identifier,
+// so going to the article pages would be six thousand requests for nothing.
+//
+// It takes the bibliography and nothing else. Mathnet has full text behind a
+// good part of this range and none of it is read, because the archive has its
+// own text and what this source is worth is the identifier.
+//
+// The run resumes. An issue already in the manifest is not asked for again, and
+// an issue the server will not answer for is reported and skipped rather than
+// taken as a reason to throw away the ones that did answer. Both exist because
+// the server times out often enough that a hundred and sixty three requests in
+// a row does not finish, and refetching what we already have to get at what we
+// do not is the rudest possible way to ask.
+func runRefsMathNet(args []string) error {
+	fs := pflag.NewFlagSet("refs mathnet", pflag.ContinueOnError)
+	root := fs.String("corpus", os.Getenv("KVANT_CORPUS"), "path to a tamnd/kvant checkout")
+	lang := fs.String("lang", corpus.DefaultLang, "the tree to match against")
+	from := fs.Int("from", 0, "first year to fetch, all of them by default")
+	to := fs.Int("to", 0, "last year of that range")
+	pause := fs.Duration("pause", time.Second, "wait this long between issue pages")
+	refresh := fs.Bool("refresh", false, "ask the site again for issues the manifest already holds")
+	dry := fs.Bool("dry-run", false, "print the counts and write nothing")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+
+	c, err := corpus.Open(*root)
+	if err != nil {
+		return err
+	}
+	idx, err := refs.LoadMathNet(c, *lang)
+	if err != nil {
+		return err
+	}
+	store, err := refs.Store(c)
+	if err != nil {
+		return err
+	}
+	held := map[string][]mathnetru.PaperRef{}
+	if !*refresh {
+		old, err := refs.ReadMathNet(store)
+		if err != nil {
+			return err
+		}
+		held = old.Held()
+	}
+
+	ctx := context.Background()
+	client := mathnetru.New()
+	issues, err := client.Contents(ctx)
+	if err != nil {
+		return err
+	}
+	kept := issues[:0]
+	for _, issue := range issues {
+		if (*from == 0 || issue.Year >= *from) && (*to == 0 || issue.Year <= *to) {
+			kept = append(kept, issue)
+		}
+	}
+	issues = kept
+	sort.SliceStable(issues, func(a, b int) bool { return issues[a].Year < issues[b].Year })
+
+	papers := map[string][]mathnetru.PaperRef{}
+	var resumed int
+	var dead []string
+	for n, issue := range issues {
+		key := fmt.Sprintf("kvant_%d_%s", issue.Year, issue.Number)
+		if got, ok := held[key]; ok {
+			papers[key], resumed = got, resumed+1
+			continue
+		}
+		if n > 0 {
+			time.Sleep(*pause)
+		}
+		got, err := client.Issue(ctx, issue.Year, issue.Query)
+		if err != nil {
+			fmt.Printf("\r%s: %v\n", key, err)
+			dead = append(dead, key)
+			continue
+		}
+		papers[key] = got
+		fmt.Printf("\r%d of %d issues, %d articles", n+1, len(issues), countPapers(papers))
+	}
+	fmt.Println()
+	if resumed > 0 {
+		fmt.Printf("%d issues came out of the manifest and were not asked for again\n", resumed)
+	}
+
+	m := refs.BuildMathNet(issues, papers, idx)
+	if err := m.Check(); err != nil {
+		return err
+	}
+	counts := m.Counts()
+	years := m.Years()
+	if len(years) == 0 {
+		return fmt.Errorf("no issue answered, so there is nothing to write")
+	}
+	fmt.Printf("%d articles on mathnet, %d to %d\n", m.Count, years[0], years[len(years)-1])
+	fmt.Printf("  tied to one of ours: %d\n", counts[refs.MathNetLinked])
+	fmt.Printf("  in an issue the corpus does not have: %d\n", counts[refs.MathNetUnread])
+	fmt.Printf("  in an issue only part of which is assembled: %d\n", counts[refs.MathNetUnassembled])
+	fmt.Printf("  in an issue we hold in full, matched to nothing: %d\n", counts[refs.MathNetUnmatched])
+	if *dry {
+		return nil
+	}
+	if err := refs.SaveMathNet(store, m); err != nil {
+		return err
+	}
+	// Written first, then complained about. The whole point of getting this far
+	// with issues missing is that the next run starts from what this one got.
+	if len(dead) > 0 {
+		return fmt.Errorf("%d issues the server would not answer for, run again to pick them up: %s",
+			len(dead), strings.Join(dead, " "))
+	}
+	return nil
+}
+
+// countPapers is the running total for the progress line.
+func countPapers(papers map[string][]mathnetru.PaperRef) int {
+	n := 0
+	for _, list := range papers {
+		n += len(list)
+	}
+	return n
 }
 
 // runRefsShow prints what one article cites and where each citation landed,

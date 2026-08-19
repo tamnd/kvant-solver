@@ -295,3 +295,62 @@ func (c *Client) wait(ctx context.Context, host string) error {
 func Fatal(err error) bool {
 	return errors.Is(err, ErrRateLimited) || errors.Is(err, ErrForbidden)
 }
+
+// Tries is how many attempts Retry makes before it gives up.
+const Tries = 4
+
+// Retry runs f again when it fails for a reason that might not happen twice.
+//
+// A sweep over a source is hundreds of requests to one small volunteer run
+// server, and over that many one of them times out. Losing the whole run to it
+// means starting the hundreds again, which is worse for the server than the
+// retry is.
+//
+// It retries a transport error and a 5xx, and nothing else. A 429 or a 403 is
+// the server telling us to stop, and retrying through either is the reason
+// hosts start blocking whole subnets. A 404 is an answer, not a failure. None
+// of those come back here.
+func (c *Client) Retry(ctx context.Context, f func() error) error {
+	var err error
+	for try := range Tries {
+		if try > 0 {
+			// Doubling from twice the ordinary gap, on top of the per-host gap
+			// the client already waits out before every request.
+			t := time.NewTimer(c.delay() * time.Duration(1<<try))
+			select {
+			case <-ctx.Done():
+				t.Stop()
+				return ctx.Err()
+			case <-t.C:
+			}
+		}
+		if err = f(); err == nil {
+			return nil
+		}
+		// Cancellation first, and as itself. A cancelled request fails as a
+		// transport error, and reporting that is how a run somebody stopped on
+		// purpose gets read afterwards as the source being down.
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		if !retryable(err) {
+			return err
+		}
+	}
+	return fmt.Errorf("gave up after %d tries: %w", Tries, err)
+}
+
+// retryable says whether asking again could plausibly give a different answer.
+func retryable(err error) bool {
+	if Fatal(err) || errors.Is(err, ErrNotFound) || errors.Is(err, ErrDisallowed) {
+		return false
+	}
+	// A 4xx means the server understood us and said no, so asking again the
+	// same way gets the same answer. A 5xx means it did not manage to answer,
+	// which is exactly the case worth asking about again.
+	var status *StatusError
+	if errors.As(err, &status) {
+		return status.Status >= 500
+	}
+	return true
+}
