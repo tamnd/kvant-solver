@@ -198,6 +198,33 @@ func Canonical(printed string) Rubric {
 	return Rubric{Slug: Slug(trimmed), Title: title(trimmed)}
 }
 
+// bySlug is the same table the other way round.
+var bySlug = func() map[string]Rubric {
+	m := map[string]Rubric{}
+	for _, r := range index {
+		m[r.Slug] = r
+	}
+	return m
+}()
+
+// BySlug resolves a rubric that is already recorded in a corpus file.
+//
+// Canonical takes the banner as it was printed, which is what the assembler
+// reads off a page and is not what anything downstream has: a file records the
+// slug it was given and nothing else. A slug that is not in the table comes
+// back with Known false and itself for a title, the same way an unknown banner
+// does, because a corpus written before a section was added to the table is old
+// and not wrong.
+func BySlug(slug string) Rubric {
+	if slug == "" {
+		return Rubric{}
+	}
+	if found, ok := bySlug[slug]; ok {
+		return found
+	}
+	return Rubric{Slug: slug, Title: slug}
+}
+
 // Known says whether a banner is one of the standing sections.
 func Known(printed string) bool { return Canonical(printed).Known }
 
