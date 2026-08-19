@@ -50,6 +50,7 @@ func run(args []string) error {
 		{"people", "people sync", "build the contributor list", runPeople},
 		{"problems", "problems build|list", "recover the problems and pair them with their printed solutions", runProblems},
 		{"publish", "publish [--out DIR]", "build the static site out of the committed text", runPublish},
+		{"quantum", "quantum sync|report", "map the English Quantum onto the Kvant it was translated out of", runQuantum},
 		{"repair", "repair [--from Y --to Y]", "read the dead pages through another lane", runRepair},
 		{"solve", "solve --set smoke", "work the problems and mark them against the printed solutions", runSolve},
 		{"translate", "translate --lang en --year 1975", "translate the corpus, and say what has gone stale", runTranslate},
