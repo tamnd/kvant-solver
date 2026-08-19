@@ -76,3 +76,34 @@ kvant solve --set decade-stratified --write
 Solutions are written under `content/solutions/<lang>/problems/`, which is a different tree from the scanned corpus. What the magazine printed is source material and what this repository worked out is not, so a reader who wants the archive can take `content/<lang>` and leave the machine's answers behind. It also means the solver can be rerun over a whole set without touching a byte of the scans, which is what makes a bad run cheap to throw away.
 
 Each solution file records how far it was checked, because a solution sitting in an archive that does not say that is asking to be quoted as though it were the magazine's own.
+
+## One run, end to end
+
+Everything above describes machinery. This is one problem going through all of it, so that the stages have something concrete attached to them.
+
+```sh
+kvant solve --corpus . --set smoke --limit 1 --mode slow
+```
+
+The problem is M301, from the 1970s mathematics stratum, and the magazine printed a solution to it, which is what makes it eligible for the set at all. The stages ran in this order and each line appeared as the call returned.
+
+```
+[1/1] M301
+  M301: reference
+  M301: candidate 1 of 3
+  M301: candidate 2 of 3
+  M301: candidate 3 of 3
+  M301: select
+  M301: truth judge
+  M301: audit judge
+  M301: grade
+  PASS, CORRECT, 17m44.685s
+```
+
+`PASS` is the two judges and `CORRECT` is the magazine. They are separate words in that line because they are separate claims, and the whole point of grading is that they can disagree. Here they did not. Both judges accepted the selected solution, and the printed answer agrees with it, so the run contributed one to `verified and correct` and nothing to the false pass rate.
+
+Eight model calls went into that: one reference, three candidates, one selector, two judges and one grader. They came to 7,689 input tokens and 3,037 output tokens, split three calls on the larger model and five on the mini. There is no `manifests/pricing.yaml` in this corpus, so the run is counted in tokens rather than money, which the scorecard says rather than printing a zero and letting it read as free.
+
+Seventeen minutes for one problem is what `--mode slow` costs. That is the reason `smoke` is four problems and the reason `--mode fast` exists at all.
+
+The attempt before this one is worth recording too, because it shows the other branch. Both judges did not pass it that time, the correction loop opened, and the endpoint returned a 500 part way through the repair. The problem was then dropped from the run rather than scored, and the scorecard reported nothing attempted and nothing graded. That is deliberate and it is the same rule as `UNGRADED`: a problem the pipeline never finished is not a problem the solver got wrong, and counting an infrastructure failure as a miss would make the score a measure of how well the endpoint was feeling.
