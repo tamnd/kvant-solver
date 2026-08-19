@@ -19,7 +19,7 @@ import (
 
 func runReport(args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("report needs a subcommand, which is failures, cost, diff or refs")
+		return fmt.Errorf("report needs a subcommand, which is failures, cost, diff, refs or authors")
 	}
 	switch args[0] {
 	case "failures":
@@ -30,6 +30,8 @@ func runReport(args []string) error {
 		return runReportDiff(args[1:])
 	case "refs":
 		return runReportRefs(args[1:])
+	case "authors":
+		return runReportAuthors(args[1:])
 	default:
 		return fmt.Errorf("unknown report subcommand %q", args[0])
 	}
@@ -189,6 +191,47 @@ func runReportFailures(args []string) error {
 		return err
 	}
 	fmt.Printf("%d pages that never read, written to %s\n", len(kept), path)
+	return nil
+}
+
+// runReportAuthors writes reports/author-defects.md, the bylines in the corpus
+// that are not names.
+//
+// It reads the corpus and nothing else, so it costs nothing to run and it says
+// the same thing twice in a row. That matters more here than it looks: these
+// defects were found by hand once and written down in a comment, and a list in
+// a comment is out of date the moment the next year is read.
+func runReportAuthors(args []string) error {
+	fs := pflag.NewFlagSet("report authors", pflag.ContinueOnError)
+	root := fs.String("corpus", os.Getenv("KVANT_CORPUS"), "path to a tamnd/kvant checkout")
+	lang := fs.String("lang", corpus.DefaultLang, "the tree to read the bylines out of")
+	out := fs.String("out", "", "write here instead of corpus/reports/author-defects.md")
+	stdout := fs.Bool("stdout", false, "print the document instead of writing it")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+
+	c, err := corpus.Open(*root)
+	if err != nil {
+		return err
+	}
+	bylines, counts, err := report.Authors(c, *lang)
+	if err != nil {
+		return err
+	}
+	md := report.AuthorMarkdown(bylines, counts, time.Now())
+	if *stdout {
+		fmt.Print(md)
+		return nil
+	}
+	path := *out
+	if path == "" {
+		path = filepath.Join(*root, "reports", "author-defects.md")
+	}
+	if err := writeReport(path, md); err != nil {
+		return err
+	}
+	fmt.Printf("%d bylines to look at out of %d, written to %s\n", len(bylines), counts.Distinct, path)
 	return nil
 }
 

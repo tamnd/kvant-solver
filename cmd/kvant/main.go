@@ -57,7 +57,7 @@ func run(args []string) error {
 		{"publisher", "publisher [--from Y --to Y] | publisher pull", "sample the text the archive already holds to measure a reading against, or pull all of it to read from", runPublisher},
 		{"vision", "vision check [--year Y]", "hold the model's reading of 1970 to 1992 against the Internet Archive's reading of the same paper", runVision},
 		{"refs", "refs build|show [--year Y]", "resolve what the articles cite into tag links", runRefs},
-		{"report", "report failures|cost|diff|refs", "write the failure list, what the reading cost, and how far the archive's text agrees", runReport},
+		{"report", "report failures|cost|diff|refs|authors", "write the failure list, what the reading cost, and how far the archive's text agrees", runReport},
 		{"sources", "sources probe", "report what each source holds per year", runSources},
 		{"tags", "tags assign|verify|list|resolve", "give every object a permanent name and check it", runTags},
 		{"textguard", "textguard --all|--year Y", "decide how each page is read and price it", runTextguard},
