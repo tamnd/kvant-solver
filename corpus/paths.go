@@ -139,6 +139,51 @@ func (c *Corpus) Articles(lang string, key IssueKey) ([]string, error) {
 	return names, nil
 }
 
+// Problems lists the problems on disk, mathematics first and then physics,
+// each in numerical order.
+//
+// The problems are not under an issue and cannot be listed one at a time,
+// because a problem belongs to the issue that posed it and the issue that
+// solved it and is filed under neither. So this walks the two subject
+// directories, which is the only place they live.
+func (c *Corpus) Problems(lang string) ([]ProblemID, error) {
+	var out []ProblemID
+	for _, subject := range []Subject{Math, Physics} {
+		dir := filepath.Join(c.Root, "content", lang, "problems", subjectDir(subject))
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			if os.IsNotExist(err) {
+				continue
+			}
+			return nil, err
+		}
+		var ids []ProblemID
+		for _, entry := range entries {
+			name := entry.Name()
+			if entry.IsDir() || !strings.HasSuffix(name, ".md") {
+				continue
+			}
+			n, err := strconv.Atoi(strings.TrimSuffix(name, ".md"))
+			if err != nil || n <= 0 {
+				continue
+			}
+			ids = append(ids, ProblemID{Subject: subject, Number: n})
+		}
+		sort.Slice(ids, func(i, j int) bool { return ids[i].Number < ids[j].Number })
+		out = append(out, ids...)
+	}
+	return out, nil
+}
+
+// subjectDir is the one letter directory a subject's problems live in. It is
+// the same split ProblemID.Path makes and is kept next to it deliberately.
+func subjectDir(subject Subject) string {
+	if subject == Physics {
+		return "f"
+	}
+	return "m"
+}
+
 // Missing is the gap between what an issue should have and what it has, which
 // is what the runner queues and what the audit reports.
 func (c *Corpus) Missing(lang string, key IssueKey, sheets int) ([]int, error) {

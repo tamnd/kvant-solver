@@ -22,6 +22,8 @@ func build(t *testing.T) (root, out string, stats publish.Stats) {
 
 	page(t, root, 1975, "4", 11, "27", "Начало статьи с формулой $x_1 + x_2 = 3$.\n\n⟦folio 27⟧")
 	page(t, root, 1975, "4", 12, "28", "Продолжение.\n\n⟦figure⟧\n\n⟦folio 28⟧")
+	// Long enough that the search index has to cut it, which most sheets are.
+	page(t, root, 1975, "4", 13, "29", strings.Repeat("Длинный лист. ", 60))
 	page(t, root, 1975, "10", 3, "", "Обложка.\n\n⟦folio none⟧")
 	page(t, root, 1976, "1", 5, "3", "Другой год.")
 
@@ -31,7 +33,37 @@ func build(t *testing.T) (root, out string, stats publish.Stats) {
 		Rubric:    "osnovnye-stati",
 		PageFirst: 11,
 		PageLast:  12,
+		Tag:       "ZSAK",
 	}, "Текст статьи с выключенной формулой:\n\n$$\\int_0^1 x\\,dx = \\frac{1}{2}$$\n")
+
+	// The same author a year later, so that the author page has to gather from
+	// more than one issue, and a different section so that the rubric index has
+	// more than one row.
+	article(t, root, 1976, "1", "01_prodolzhenie", corpus.ArticleFront{
+		Title:     "Продолжение",
+		Authors:   []string{"И. Иванов", "П. Петров"},
+		Rubric:    "matematicheskiy-kruzhok",
+		PageFirst: 5,
+		PageLast:  5,
+		Tag:       "Q7T2",
+	}, "Ещё текст.\n")
+
+	// Posed and solved in issues the site has, so both halves of the meta line
+	// are links.
+	problem(t, root, corpus.ProblemFront{
+		ID: "M301", Subject: corpus.Math, Tag: "0IZG",
+		PosedIn: "kvant_1975_4", PosedPages: "41-42",
+		SolvedIn: "kvant_1975_10", SolvedPages: "51-53",
+		HasPublishedSolution: true,
+		Authors:              []string{"С. Охитин"},
+	}, "## Условие\n\nДокажите, что $n$ отрезков не пересекаются.\n")
+
+	// Posed in an issue nobody has read, which is the normal case for most of
+	// the corpus and must not put a link to a directory that is not there.
+	problem(t, root, corpus.ProblemFront{
+		ID: "F372", Subject: corpus.Physics,
+		PosedIn: "kvant_1988_11-12", PosedPages: "36",
+	}, "## Условие\n\nДве тонкие линзы стоят на одной оси.\n")
 
 	c, err := corpus.Open(root)
 	if err != nil {
@@ -86,6 +118,19 @@ func article(t *testing.T, root string, year int, number, name string, front cor
 	}
 }
 
+func problem(t *testing.T, root string, front corpus.ProblemFront, body string) {
+	t.Helper()
+	id, err := front.ProblemID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	front.Lang = corpus.DefaultLang
+	c := &corpus.Corpus{Root: root}
+	if err := corpus.Save(c.ProblemPath(corpus.DefaultLang, id), &front, body); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func read(t *testing.T, out, name string) string {
 	t.Helper()
 	data, err := os.ReadFile(filepath.Join(out, filepath.FromSlash(name)))
@@ -103,11 +148,14 @@ func TestASiteIsBuiltOutOfWhatWasRead(t *testing.T) {
 	if stats.Issues != 3 {
 		t.Errorf("published %d issues, want 3", stats.Issues)
 	}
-	if stats.Pages != 4 {
-		t.Errorf("published %d pages, want 4", stats.Pages)
+	if stats.Pages != 5 {
+		t.Errorf("published %d pages, want 5", stats.Pages)
 	}
-	if stats.Articles != 1 {
-		t.Errorf("published %d articles, want 1", stats.Articles)
+	if stats.Articles != 2 {
+		t.Errorf("published %d articles, want 2", stats.Articles)
+	}
+	if stats.Problems != 2 {
+		t.Errorf("published %d problems, want 2", stats.Problems)
 	}
 
 	for _, name := range []string{
@@ -118,6 +166,16 @@ func TestASiteIsBuiltOutOfWhatWasRead(t *testing.T) {
 		"1975/04/articles/01_nachalo.html",
 		"1975/10/pages/0003.html",
 		"1976/01/index.html",
+		"rubrics/index.html",
+		"rubrics/osnovnye-stati.html",
+		"authors/index.html",
+		"authors/i-ivanov.html",
+		"problems/index.html",
+		"problems/m/0301.html",
+		"problems/f/0372.html",
+		"tags/index.html",
+		"tags/ZSAK.html",
+		"search.json",
 		"assets/site.css",
 		"assets/katex.min.css",
 	} {
