@@ -5,9 +5,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
+	"strings"
 
 	"github.com/tamnd/kvant-solver/source"
 )
+
+// ErrRetired is the mirror answering for a page it no longer serves.
+var ErrRetired = errors.New("the MCCME mirror has been retired and redirects to kvant.digital")
 
 // Client fetches and parses the MCCME mirror.
 type Client struct {
@@ -16,6 +21,39 @@ type Client struct {
 
 // New returns a client with the default manners.
 func New() *Client { return &Client{Fetcher: source.NewClient()} }
+
+// get is Fetcher.Get with the check for the mirror being gone in front of it.
+//
+// The host does not 404 a page it has stopped serving. Every path on it,
+// robots.txt included, now 301s to kvant.digital, so a request comes back 200
+// with somebody else's HTML in it and each parser reports whatever it failed to
+// find: the archive page says it holds no issues, the contents say they have no
+// rows. Saying once that the mirror is gone is a great deal easier to act on
+// than four different parse failures with one cause.
+func (c *Client) get(ctx context.Context, u string) (*source.Response, error) {
+	resp, err := c.Fetcher.Get(ctx, u)
+	if err != nil {
+		return nil, err
+	}
+	if movedOff(u, resp.FinalURL) {
+		return nil, fmt.Errorf("%s: %w", u, ErrRetired)
+	}
+	return resp, nil
+}
+
+// movedOff reports whether a request ended up on a different host. A redirect
+// within the mirror is ordinary and is not this.
+func movedOff(from, to string) bool {
+	a, err := url.Parse(from)
+	if err != nil {
+		return false
+	}
+	b, err := url.Parse(to)
+	if err != nil {
+		return false
+	}
+	return !strings.EqualFold(a.Host, b.Host)
+}
 
 // Contents returns one issue's contents in the ordering the mirror generates
 // by author.
@@ -31,7 +69,7 @@ func (c *Client) ContentsByTitle(ctx context.Context, year int, month string) (*
 }
 
 func (c *Client) contents(ctx context.Context, u string, year int, month string) (*Contents, error) {
-	resp, err := c.Fetcher.Get(ctx, u)
+	resp, err := c.get(ctx, u)
 	if err != nil {
 		return nil, err
 	}
@@ -48,7 +86,7 @@ func (c *Client) AuthorIndex(ctx context.Context, letter rune) ([]Author, error)
 	if !ok {
 		return nil, fmt.Errorf("%q has no page in the author index", letter)
 	}
-	resp, err := c.Fetcher.Get(ctx, u)
+	resp, err := c.get(ctx, u)
 	if err != nil {
 		return nil, err
 	}
@@ -79,7 +117,7 @@ func (c *Client) Authors(ctx context.Context) ([]Author, error) {
 // it holds. One request answers what would otherwise be a hundred HEADs, and it
 // answers with URLs the mirror itself published rather than ones we made up.
 func (c *Client) Archive(ctx context.Context) (*Archive, error) {
-	resp, err := c.Fetcher.Get(ctx, ArchiveURL())
+	resp, err := c.get(ctx, ArchiveURL())
 	if err != nil {
 		return nil, err
 	}
