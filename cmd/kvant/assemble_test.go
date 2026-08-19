@@ -97,3 +97,37 @@ func TestAReassembleStillCorrectsTheFrontMatterItKeepsTheTextOf(t *testing.T) {
 		t.Errorf("the publisher's text went away:\n%s", body)
 	}
 }
+
+// A tag is assigned once and then cited, so it has to survive the article being
+// built again. Assembly rebuilds the front matter from scratch and has no way
+// to mint one, so every reassemble used to drop the tag off every article it
+// touched and the standing workaround was to remember to run tags assign after.
+func TestAReassembleKeepsTheTagTheArticleWasGiven(t *testing.T) {
+	root := resplitFixture(t, []manifest.Row{
+		{Title: "Равенства из спичек", Authors: "Иванов И. И.Cnk", Page: 1, Slug: "ravenstva"},
+	})
+	if err := run([]string{"assemble", "--corpus", root, "--issue", "kvant_1975_1"}); err != nil {
+		t.Fatal(err)
+	}
+	path, body, front := onlyArticle(t, root)
+	front.Tag = "8IO5"
+	if err := corpus.Save(path, &front, body); err != nil {
+		t.Fatal(err)
+	}
+
+	// Correcting a byline is the usual reason to reassemble, and it must not
+	// cost the article its identifier.
+	writeTOC(t, root, []manifest.Row{
+		{Title: "Равенства из спичек", Authors: "Иванов И. И.", Page: 1, Slug: "ravenstva"},
+	})
+	if err := run([]string{"assemble", "--corpus", root, "--issue", "kvant_1975_1"}); err != nil {
+		t.Fatal(err)
+	}
+	_, _, after := onlyArticle(t, root)
+	if after.Tag != "8IO5" {
+		t.Errorf("the tag is now %q", after.Tag)
+	}
+	if len(after.Authors) != 1 || after.Authors[0] != "Иванов И. И." {
+		t.Errorf("the byline is %v", after.Authors)
+	}
+}
