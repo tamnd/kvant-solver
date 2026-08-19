@@ -66,7 +66,7 @@ func runAssemble(args []string) error {
 		result := assemble.Issue(key, rows, pages)
 
 		// Read before the clear, because the clear is what would destroy it.
-		onDisk := typedOnDisk(c, *lang, key)
+		onDisk := keptOnDisk(c, *lang, key)
 		if *clean {
 			if err := clearArticles(c, *lang, key); err != nil {
 				return err
@@ -78,17 +78,16 @@ func runAssemble(args []string) error {
 			if why != "" {
 				fmt.Printf("  publisher_fragment %s %s\n", article.Slug, why)
 			}
-			if extraction != corpus.ExtractionPublisher {
-				if kept, ok := onDisk[articleID(key, article.Slug)]; ok {
-					fmt.Printf("  kept_publisher_text %s the cache has none for it and what this issue already holds is the publisher's own\n", article.Slug)
-					body, extraction = kept, corpus.ExtractionPublisher
-				}
+			had := onDisk[articleID(key, article.Slug)]
+			if extraction != corpus.ExtractionPublisher && had.typed != "" {
+				fmt.Printf("  kept_publisher_text %s the cache has none for it and what this issue already holds is the publisher's own\n", article.Slug)
+				body, extraction = had.typed, corpus.ExtractionPublisher
 			}
 			if extraction == corpus.ExtractionPublisher {
 				typed++
 			}
 			article.Body = body
-			if err := writeArticle(c, *lang, key, &issues[i], article, extraction); err != nil {
+			if err := writeArticle(c, *lang, key, &issues[i], article, extraction, had.tag); err != nil {
 				return err
 			}
 		}
@@ -156,24 +155,45 @@ func preferTyped(store publisher.Store, key corpus.IssueKey, article assemble.Ar
 	return publisher.Titled(article.Title, text), corpus.ExtractionPublisher, ""
 }
 
-// typedOnDisk is the publisher's text this issue already holds, by article id.
+// kept is what an article already on disk carries that a fresh assembly has no
+// way of working out for itself.
+type kept struct {
+	// typed is the publisher's own text, and is empty unless the article says
+	// that is what it holds.
+	typed string
+
+	// tag is the identifier kvant tags assign gave the article.
+	tag corpus.Tag
+}
+
+// keptOnDisk is what this issue's articles already carry, by article id.
 //
-// That text comes out of a cache assemble is given the path of, so a run
-// pointed at a different cache, or at one nobody has pulled into, finds nothing
-// and falls back to the reading of the pages. For an article being built the
-// first time that is the right answer. For one that already holds the
-// publisher's own text it is the wrong one, because a model reading a scan
-// cannot beat the text it is a reading of.
+// Assembly is a pure function of the pages and the contents, and these two
+// fields are neither. The publisher's text comes out of a cache assemble is
+// given the path of, so a run pointed at a different cache, or at one nobody
+// has pulled into, finds nothing and falls back to the reading of the pages.
+// For an article being built the first time that is the right answer. For one
+// that already holds the publisher's own text it is the wrong one, because a
+// model reading a scan cannot beat the text it is a reading of.
 //
 // Reassembling an issue to correct a byline used to replace the better source
 // with the worse one and say nothing about it, which is how two articles in
 // 1975 lost their ё, their formulas, and the markers saying which parts of them
 // had not been read at all.
 //
+// The tag is there for the same reason and was a worse leak, because it hit
+// every article rather than the forty nine the publisher has typed. A tag is
+// assigned once and then cited, so it has to survive the article being built
+// again. Rebuilding the front matter from scratch dropped all of them, and the
+// standing workaround was to remember to run kvant tags assign afterwards and
+// watch it report a few hundred files rewritten. Anybody who forgot published a
+// corpus whose articles had no identifier at all.
+//
 // It is keyed by id rather than by filename because the ordinal is in the
-// filename, and a row moving up the contents must not lose the text with it.
-func typedOnDisk(c *corpus.Corpus, lang string, key corpus.IssueKey) map[string]string {
-	out := map[string]string{}
+// filename, and a row moving up the contents must not lose either field with
+// it.
+func keptOnDisk(c *corpus.Corpus, lang string, key corpus.IssueKey) map[string]kept {
+	out := map[string]kept{}
 	names, err := c.Articles(lang, key)
 	if err != nil {
 		return out
@@ -182,10 +202,14 @@ func typedOnDisk(c *corpus.Corpus, lang string, key corpus.IssueKey) map[string]
 	for _, name := range names {
 		front := &corpus.ArticleFront{}
 		body, err := corpus.LoadUnchecked(filepath.Join(dir, name), front)
-		if err != nil || front.Extraction != corpus.ExtractionPublisher {
+		if err != nil {
 			continue
 		}
-		out[front.ID] = body
+		had := kept{tag: front.Tag}
+		if front.Extraction == corpus.ExtractionPublisher {
+			had.typed = body
+		}
+		out[front.ID] = had
 	}
 	return out
 }
@@ -200,14 +224,16 @@ func articleID(key corpus.IssueKey, slug string) string {
 	return id.String()
 }
 
-// writeArticle puts one assembled article in the corpus.
-func writeArticle(c *corpus.Corpus, lang string, key corpus.IssueKey, iss *manifest.Issue, article assemble.Article, extraction string) error {
+// writeArticle puts one assembled article in the corpus. The tag is whatever
+// the article already carried, because assembly does not mint one.
+func writeArticle(c *corpus.Corpus, lang string, key corpus.IssueKey, iss *manifest.Issue, article assemble.Article, extraction string, tag corpus.Tag) error {
 	id, err := corpus.NewArticleID(key, article.Slug)
 	if err != nil {
 		return err
 	}
 	front := &corpus.ArticleFront{
 		ID:         id.String(),
+		Tag:        tag,
 		Issue:      key.String(),
 		Year:       key.Year,
 		Number:     key.Number,
