@@ -125,15 +125,83 @@ func (i *Issue) merge(other Issue) {
 	if other.Sheets > 0 {
 		i.Sheets = other.Sheets
 	}
-	if other.Sources.Digital != nil {
-		i.Sources.Digital = other.Sources.Digital
+	// Field by field and not pointer over pointer. The index pass knows an
+	// issue's URL and nothing else, so replacing the whole struct with what it
+	// carries drops the row counts a deep run went and read, and it drops them
+	// for every issue rather than only the ones being resynced.
+	i.Sources.Digital = mergeDigital(i.Sources.Digital, other.Sources.Digital)
+	i.Sources.MCCME = mergeMCCME(i.Sources.MCCME, other.Sources.MCCME)
+	i.Sources.MathNet = mergeMathNet(i.Sources.MathNet, other.Sources.MathNet)
+}
+
+func mergeDigital(into, from *Digital) *Digital {
+	if from == nil {
+		return into
 	}
-	if other.Sources.MCCME != nil {
-		i.Sources.MCCME = other.Sources.MCCME
+	if into == nil {
+		return from
 	}
-	if other.Sources.MathNet != nil {
-		i.Sources.MathNet = other.Sources.MathNet
+	out := *into
+	if from.URL != "" {
+		out.URL = from.URL
 	}
+	if from.Rows > 0 {
+		out.Rows = from.Rows
+	}
+	if from.TextRows > 0 {
+		out.TextRows = from.TextRows
+	}
+	return &out
+}
+
+func mergeMCCME(into, from *MCCME) *MCCME {
+	if from == nil {
+		return into
+	}
+	if into == nil {
+		return from
+	}
+	out := *into
+	for _, f := range []struct {
+		dst *string
+		src string
+	}{
+		{&out.URL, from.URL},
+		{&out.ByTitleURL, from.ByTitleURL},
+		{&out.PDFURL, from.PDFURL},
+		{&out.DjVuURL, from.DjVuURL},
+	} {
+		if f.src != "" {
+			*f.dst = f.src
+		}
+	}
+	if from.Rows > 0 {
+		out.Rows = from.Rows
+	}
+	if from.TitleRows > 0 {
+		out.TitleRows = from.TitleRows
+	}
+	return &out
+}
+
+func mergeMathNet(into, from *MathNet) *MathNet {
+	if from == nil {
+		return into
+	}
+	if into == nil {
+		return from
+	}
+	out := *into
+	if from.URL != "" {
+		out.URL = from.URL
+	}
+	if from.Number != "" {
+		out.Number = from.Number
+	}
+	// FullText is a claim the source makes either way, so the newer answer
+	// wins rather than only a true one.
+	out.FullText = from.FullText
+	return &out
 }
 
 // Sort puts the list in shelf order and refreshes the two counts. Every write

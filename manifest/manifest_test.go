@@ -164,6 +164,69 @@ func TestMergeFillsInRatherThanReplaces(t *testing.T) {
 	}
 }
 
+func TestTheIndexPassDoesNotWipeWhatADeepRunRead(t *testing.T) {
+	m := &Issues{}
+	iss, _ := NewIssue(1975, "1")
+	iss.Sources.Digital = &Digital{URL: "https://www.kvant.digital/issues/1975/1/", Rows: 24, TextRows: 19}
+	iss.Sources.MCCME = &MCCME{
+		URL:        "https://kvant.mccme.ru/1975/01/",
+		ByTitleURL: "https://kvant.mccme.ru/1975/01/index-title.htm",
+		PDFURL:     "https://kvant.mccme.ru/pdf/1975/01.pdf",
+		Rows:       24,
+		TitleRows:  23,
+	}
+	m.Add(iss)
+
+	// This is what a plain index sync hands over: the URL of each issue and
+	// nothing else. It knows no row counts because it never opened the issue,
+	// and the counts have to survive it.
+	again, _ := NewIssue(1975, "1")
+	again.Sources.Digital = &Digital{URL: "https://www.kvant.digital/issues/1975/1/"}
+	again.Sources.MCCME = &MCCME{
+		URL:        "https://kvant.mccme.ru/1975/01/",
+		ByTitleURL: "https://kvant.mccme.ru/1975/01/index-title.htm",
+	}
+	m.Add(again)
+
+	got, ok := m.Get("kvant_1975_1")
+	if !ok {
+		t.Fatal("the issue went missing")
+	}
+	if got.Sources.Digital.Rows != 24 || got.Sources.Digital.TextRows != 19 {
+		t.Errorf("kvant.digital came back with %d rows and %d of them text",
+			got.Sources.Digital.Rows, got.Sources.Digital.TextRows)
+	}
+	if got.Sources.MCCME.Rows != 24 || got.Sources.MCCME.TitleRows != 23 {
+		t.Errorf("the mirror came back with %d rows and %d by title",
+			got.Sources.MCCME.Rows, got.Sources.MCCME.TitleRows)
+	}
+	// The PDF is found by a probe of its own, which the index pass does not run.
+	if got.Sources.MCCME.PDFURL == "" {
+		t.Error("the full issue PDF was dropped by a pass that never looks for one")
+	}
+}
+
+func TestANewAnswerStillWinsOverTheOldOne(t *testing.T) {
+	m := &Issues{}
+	iss, _ := NewIssue(2008, "1")
+	iss.Sources.MathNet = &MathNet{URL: "https://www.mathnet.ru/kvant/old", Number: "1", FullText: true}
+	m.Add(iss)
+
+	// Filling in must not turn into never changing. A source that moved, or
+	// that stopped offering full text, has to be able to say so.
+	again, _ := NewIssue(2008, "1")
+	again.Sources.MathNet = &MathNet{URL: "https://www.mathnet.ru/kvant/new", Number: "1"}
+	m.Add(again)
+
+	got, _ := m.Get("kvant_2008_1")
+	if got.Sources.MathNet.URL != "https://www.mathnet.ru/kvant/new" {
+		t.Errorf("the URL is %q, the newer answer should have won", got.Sources.MathNet.URL)
+	}
+	if got.Sources.MathNet.FullText {
+		t.Error("full text is a claim either way, so false has to be able to overwrite true")
+	}
+}
+
 func TestIssueNumberOrdering(t *testing.T) {
 	for _, tc := range []struct {
 		number string
