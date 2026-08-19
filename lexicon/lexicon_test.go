@@ -3,6 +3,8 @@ package lexicon_test
 import (
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 	"testing"
 
 	"github.com/tamnd/kvant-solver/lexicon"
@@ -179,5 +181,87 @@ func TestOpenTreatsAMissingLexiconAsNone(t *testing.T) {
 	}
 	if lex != nil {
 		t.Error("Open invented a lexicon for a corpus that has none")
+	}
+}
+
+// The wordlist is the part of the lexicon the corpus cannot supply, so what it
+// keeps has to be the part Resolves can ask about and nothing else. A reading is
+// letters only and never shorter than MinLen, so a hyphenated form and a two
+// letter particle are weight in a file somebody commits and can never be looked
+// up.
+func TestTheWordlistKeepsWhatAReadingCouldBe(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "russian.txt")
+	lines := "# where this came from\n\nолимпиадам\nГЛЮКОЗА\nглюкоза\nпо-русски\n-ка\nвуз\nabc\nатом3\n"
+	if err := os.WriteFile(path, []byte(lines), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	forms, err := lexicon.Wordlist(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"глюкоза", "олимпиадам"}
+	if !slices.Equal(forms, want) {
+		t.Errorf("Wordlist kept %v, want %v", forms, want)
+	}
+}
+
+// Merge is what puts the two sources together, and the file it feeds is read in
+// diffs, so a form from both sources is one line and the order does not depend
+// on which list it came from.
+func TestMergeSortsAndKeepsOneOfEach(t *testing.T) {
+	got := lexicon.Merge([]string{"теорема", "однако"}, []string{"Однако", "глюкоза"})
+	want := []string{"глюкоза", "однако", "теорема"}
+	if !slices.Equal(got, want) {
+		t.Errorf("Merge returned %v, want %v", got, want)
+	}
+}
+
+// Most of the lexicon now comes from a download rather than from the archive,
+// and a reader who cannot tell which is which cannot rebuild the file or judge
+// it. The header says so, and Load has to skip it or the sentences become words.
+func TestTheHeaderIsWrittenAndIsNotReadBackAsWords(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "manifests", "lexicon.txt")
+	if err := lexicon.Write(path, []string{"однако"}, "built by kvant lexicon build", "906487 forms from russian.txt"); err != nil {
+		t.Fatal(err)
+	}
+	text, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(text), "# built by kvant lexicon build") {
+		t.Errorf("the file does not carry its header:\n%s", text)
+	}
+	lex, err := lexicon.Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if lex.Len() != 1 {
+		t.Errorf("loaded %d forms, want the one word and none of the header", lex.Len())
+	}
+	if lex.Has("built") || lex.Has("# built by kvant lexicon build") {
+		t.Error("a header line came back as a word")
+	}
+}
+
+// The wordlist earns its place on the words the corpus could not know, and it
+// has to earn it without vouching for the pages rule 8 exists to catch. Both
+// halves are checked together because either one alone is easy.
+func TestTheWordlistPlacesRealWordsWithoutPlacingNoise(t *testing.T) {
+	corpusOnly := lexicon.New([]string{"однако"})
+	withList := lexicon.New([]string{"однако", "олимпиадам", "глюкоза", "хаотический"})
+
+	placed := []string{"олимпiadам", "gлюkoза", "xaотический"}
+	for _, word := range placed {
+		if corpusOnly.Resolves(word) {
+			t.Errorf("%s resolved without the wordlist, so this proves nothing", word)
+		}
+		if !withList.Resolves(word) {
+			t.Errorf("%s is Russian spelled in two alphabets and the wordlist did not place it", word)
+		}
+	}
+	for _, word := range []string{"Оlimпилад", "MEMORIALНОГО", "непrivibuous", "фываpqrs"} {
+		if withList.Resolves(word) {
+			t.Errorf("%s is not a word in any alphabet and the wordlist placed it", word)
+		}
 	}
 }
