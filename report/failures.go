@@ -243,6 +243,13 @@ func countIssues(list []Failure) int {
 
 // meaning says what to do about a class, because the rule name alone tells
 // somebody which check fired and not what they are looking at.
+//
+// Every rule in ocr.AllRules needs a case here. The default is the sentence for
+// a page with no history at all, and a rule that falls through to it does not
+// get a missing gloss, it gets that one: rule 9 was added without a case and
+// sixty six pages the model had visibly repeated itself on printed as "no
+// attempt was recorded". TestEveryRuleIsExplained is what keeps the next rule
+// from doing the same.
 func meaning(class string) string {
 	if strings.Contains(class, "+") {
 		return "more than one rule, read the pages"
@@ -264,6 +271,8 @@ func meaning(class string) string {
 		return "a math span does not parse"
 	case ocr.RuleScript:
 		return "two alphabets welded into one word, the lane was sampling"
+	case ocr.RuleRunaway:
+		return "the decoder got stuck and repeated itself, the page needs another engine"
 	case "no rule":
 		return "the service failed rather than the page, worth retrying"
 	}
