@@ -393,6 +393,19 @@ func (r *Runner) attempt(ctx context.Context, job queue.Job, spent *meter) (queu
 
 	raw, err := r.read(ctx, image, spent)
 	if err != nil {
+		// A pool with no uploads left refuses every image alike, so the page has
+		// not been judged and nothing about it has been learned. Writing that
+		// against the page would mark good scans dead for a reason that has
+		// evaporated by the time the report is read. The job goes back on pending
+		// and the straight failure counter stops the run instead, which is the
+		// honest pair of statements: this page is still to do, and this lane is
+		// not currently reading.
+		if errors.Is(err, ErrNoQuota) {
+			if release := r.Queue.Release(job, "the account pool had no uploads left"); release != nil {
+				return "", nil, release
+			}
+			return queue.Pending, nil, fmt.Errorf("%s: %w", job.Target, err)
+		}
 		state, failErr := r.Queue.Fail(job, condense(err.Error()))
 		return state, nil, orErr(failErr, err)
 	}

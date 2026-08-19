@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/pflag"
 
 	"github.com/tamnd/kvant-solver/api"
+	"github.com/tamnd/kvant-solver/fleet"
 	"github.com/tamnd/kvant-solver/ocr"
 	"github.com/tamnd/kvant-solver/prompt"
 )
@@ -26,9 +27,21 @@ type laneFlags struct {
 	model    *string
 	short    *string
 	command  *string
+	hosts    *[]string
+	tool     *string
+	display  *string
 	timeout  *time.Duration
 	fs       *pflag.FlagSet
 }
+
+// FleetModel is what the rented boxes read a page with. The tool drives a
+// browser signed in to a real account, so the model is whatever that account is
+// served, and naming it here is how the corpus records it.
+const FleetModel = "gpt-5"
+
+// FleetTool is where chatgpt-tool lives on server2 and server3. It is under
+// /home/tam on server1, which is what --tool is for.
+const FleetTool = "/root/chatgpt-tool/.venv/bin/chatgpt-tool"
 
 // addLaneFlags puts the engine flags on a command. The defaults name the card,
 // because that is the lane a decade is read with; repair overrides them.
@@ -38,7 +51,7 @@ func addLaneFlags(fs *pflag.FlagSet, kind string) laneFlags {
 		// chatgpt-tool serve and vllm serve answer the same route, so the
 		// difference between the browser lane and the card in the other room is a
 		// URL and a model name.
-		kind:     fs.String("engine", kind, "served for an endpoint, cli for a local program"),
+		kind:     fs.String("engine", kind, "served for an endpoint, cli for a local program, fleet for the rented boxes"),
 		endpoint: fs.String("api", envOr("KVANT_API", "http://127.0.0.1:8000/v1/chat/completions"), "an OpenAI shaped endpoint that takes an image"),
 		key:      fs.String("api-key", os.Getenv("KVANT_API_KEY"), "bearer token for the endpoint, when it wants one"),
 		model:    fs.String("model", envOr("KVANT_MODEL", "zai-org/GLM-OCR"), "the model to ask"),
@@ -47,6 +60,12 @@ func addLaneFlags(fs *pflag.FlagSet, kind string) laneFlags {
 		// accuracy.
 		short:   fs.String("short-prompt", "auto", "send the one sentence prompt a document model wants: auto, yes or no"),
 		command: fs.String("cli", envOr("KVANT_CLI", "claude -p --allowedTools Read"), "the program the cli engine runs"),
+		// The hosts are ssh names out of the user's own config and not addresses,
+		// because which user and which key reaches which box is that file's
+		// business and not this repo's.
+		hosts:   fs.StringSlice("host", nil, "an ssh name of a box the fleet engine reads on, repeatable"),
+		tool:    fs.String("tool", envOr("KVANT_TOOL", FleetTool), "where chatgpt-tool lives on those boxes"),
+		display: fs.String("display", ocr.DefaultDisplay, "the X display Chrome opens on there"),
 		timeout: fs.Duration("timeout", ocr.DefaultPageTimeout, "how long one page may take"),
 		fs:      fs,
 	}
@@ -124,8 +143,33 @@ func (f laneFlags) build() (lane, error) {
 			Prompt:  built.Prompt,
 			Timeout: *f.timeout,
 		}
+	case "fleet":
+		if len(*f.hosts) == 0 {
+			return lane{}, fmt.Errorf("--engine fleet needs at least one --host")
+		}
+		// One ssh per command and a generous bound on it. The command being timed
+		// is a browser opening a page, uploading a picture and waiting for a model
+		// to read it, which is minutes rather than seconds, and cutting it short
+		// spends the account's upload for nothing.
+		shell := fleet.SSH{Timeout: *f.timeout + 2*time.Minute}
+		copier := ocr.Rsync{Timeout: *f.timeout}
+		name := FleetModel
+		if f.fs.Changed("model") {
+			name = *f.model
+		}
+		lanes := make([]ocr.Engine, 0, len(*f.hosts))
+		for _, host := range *f.hosts {
+			lanes = append(lanes, &ocr.Remote{
+				Host: ocr.Host{
+					Name: host, Tool: *f.tool, Display: *f.display,
+				},
+				Shell: shell, Copy: copier,
+				Prompt: built.Prompt, Model: name, Timeout: *f.timeout,
+			})
+		}
+		built.Engine = &ocr.Pool{Lanes: lanes}
 	default:
-		return lane{}, fmt.Errorf("--engine is served or cli, not %q", *f.kind)
+		return lane{}, fmt.Errorf("--engine is served, cli or fleet, not %q", *f.kind)
 	}
 	return built, nil
 }
