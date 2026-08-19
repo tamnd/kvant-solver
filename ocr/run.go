@@ -189,6 +189,9 @@ func (r *Runner) Run(ctx context.Context) (Summary, error) {
 		// the machine is wrong and not the page.
 		released = map[string]bool{}
 		halt     bool
+		// straight counts the errors since the last page that got an answer, which
+		// is how a run tells a bad page from a lane that is not there.
+		straight int
 	)
 	var wait sync.WaitGroup
 	for range max(1, r.Workers) {
@@ -218,6 +221,7 @@ func (r *Runner) Run(ctx context.Context) (Summary, error) {
 				switch {
 				case err != nil:
 					summary.Failed++
+					straight++
 					r.log("%s: %v", job.Target, err)
 					if errors.Is(err, ErrImageGone) {
 						if released[job.Target] {
@@ -228,14 +232,22 @@ func (r *Runner) Run(ctx context.Context) (Summary, error) {
 						}
 						released[job.Target] = true
 					}
+					if straight >= MaxStraightFailures {
+						halt = true
+						failed = errors.Join(failed, fmt.Errorf(
+							"%w: %d pages in a row failed without an answer, the last of them %s: %w",
+							ErrLaneDown, straight, job.Target, err))
+					}
 				case len(problems) > 0:
 					summary.Rejected++
+					straight = 0
 					if state == queue.Dead {
 						summary.Dead++
 					}
 					r.log("%s: rejected, %s", job.Target, Reasons(problems))
 				default:
 					summary.Read++
+					straight = 0
 				}
 				mu.Unlock()
 			}
@@ -260,6 +272,27 @@ func (r *Runner) Run(ctx context.Context) (Summary, error) {
 // is a loop. Both look like a pending job with an error, so the difference is
 // carried in the error rather than guessed from the state.
 var ErrImageGone = errors.New("the page image is not readable here")
+
+// MaxStraightFailures is how many pages may fail without an answer before the
+// run gives up on the lane.
+//
+// A page that errors rather than being rejected has told us nothing about the
+// page, and when every page does it the thing that is wrong is not the pages. A
+// run of 1347 script failures went through the whole work list in under fifteen
+// seconds against a vLLM that had died, printing 4002 connection refusals and
+// then a per issue summary reading read 0, rejected 0, dead 0, which is what a
+// finished issue looks like. Nothing was written and nothing was harmed, and
+// that is the trouble: the command exited as though the work had been done.
+//
+// Ten rather than one because a single page can fail on its own, a timeout or a
+// response the decoder choked on, and those are worth stepping over. Ten in a
+// row with no page in between getting any answer at all is a lane, not a page.
+const MaxStraightFailures = 10
+
+// ErrLaneDown is that verdict, and it is a named error because the caller acts
+// on it. Repair walks issues in a loop and the next issue would go the same way,
+// so the loop has to stop rather than log 227 times.
+var ErrLaneDown = errors.New("the reading lane is not answering")
 
 // one reads a single page and files the result.
 //
