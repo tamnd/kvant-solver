@@ -111,7 +111,8 @@ func runTranslate(args []string) error {
 		}
 
 		fmt.Printf("%s: %s\n", key, state.Reason())
-		res, err := engine.Translate(ctx, translate.Job{Key: key, Lang: *lang, Body: body},
+		res, err := engine.Translate(ctx,
+			translate.Job{Key: key, Lang: *lang, Body: body, Title: titleOf(front)},
 			g, translate.Options{Model: *model, Retries: *retries})
 		if err != nil {
 			fmt.Printf("  failed: %v\n", err)
@@ -252,6 +253,16 @@ func provenanceOf(front corpus.Front) corpus.Provenance {
 	}
 }
 
+// titleOf is the one piece of prose that lives in the front matter rather than
+// the body. Only articles carry one, so everything else translates its body and
+// nothing else.
+func titleOf(front corpus.Front) string {
+	if f, ok := front.(*corpus.ArticleFront); ok {
+		return f.Title
+	}
+	return ""
+}
+
 func translatedOf(front corpus.Front) corpus.Translated {
 	switch f := front.(type) {
 	case *corpus.PageFront:
@@ -288,6 +299,11 @@ func writeTranslation(target string, front corpus.Front, res translate.Result,
 	key, lang, run string, g *glossary.Glossary, sourceBody string) error {
 	stampOn(front, lang, res.Prompt,
 		translate.Stamp(key, provenanceOf(front), sourceBody, g, lang, res.Model, run))
+	// An empty title back from a job that carried one means the call returned
+	// nothing usable, and the Russian title is better than no title at all.
+	if f, ok := front.(*corpus.ArticleFront); ok && res.Title != "" {
+		f.Title = res.Title
+	}
 	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
 		return err
 	}
