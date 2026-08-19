@@ -47,6 +47,7 @@ func (c *Catalog) SyncIssue(ctx context.Context, iss *manifest.Issue, toc *manif
 		}
 	}
 	if toc != nil {
+		carryPages(toc, iss.Key, rows)
 		toc.Set(iss.Key, rows)
 	}
 	iss.Sources.Digital = &manifest.Digital{
@@ -57,6 +58,31 @@ func (c *Catalog) SyncIssue(ctx context.Context, iss *manifest.Issue, toc *manif
 
 	iss.Sheets = len(page.Sheets)
 	return nil
+}
+
+// carryPages puts the mirror's page ranges back on the rows this run just read.
+//
+// kvant.digital gives one page per row and the mirror gives the whole range, so
+// Pages is the one field on a row that only a mirrored run can fill in. Setting
+// the fresh rows over the old ones without this drops every range a mirrored
+// run had merged in, which makes a deep run without --mirror quietly worse than
+// no run at all.
+func carryPages(toc *manifest.TOC, key string, rows []manifest.Row) {
+	old, ok := toc.Get(key)
+	if !ok {
+		return
+	}
+	pages := map[string][]int{}
+	for _, r := range old {
+		if len(r.Pages) > 0 {
+			pages[titleKey(r.Title)] = r.Pages
+		}
+	}
+	for i := range rows {
+		if p, ok := pages[titleKey(rows[i].Title)]; ok {
+			rows[i].Pages = p
+		}
+	}
 }
 
 // SyncPersonalia rebuilds the contributor list from kvant.digital, which is
