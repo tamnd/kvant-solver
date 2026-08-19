@@ -123,8 +123,13 @@ func (c *Catalog) SyncIssues(ctx context.Context, errata *manifest.Errata) (*man
 		// mathnet is a second opinion on twenty of the fifty years. Losing it
 		// is worth reporting and is not worth failing the run for.
 		errata.Add(manifest.Erratum{
-			Kind:   "source_unavailable",
-			Claims: map[string]string{SourceMathNet: err.Error()},
+			Kind: "source_unavailable",
+			// Named in the subject as well as in the claims, because an entry
+			// is matched on its issue, kind and subject, and two outages with
+			// none of the three filled in are the same entry. The mirror going
+			// down and then mathnet going down wrote one line, not two.
+			Subject: SourceMathNet,
+			Claims:  map[string]string{SourceMathNet: err.Error()},
 		})
 		out.Sort()
 		return out, nil

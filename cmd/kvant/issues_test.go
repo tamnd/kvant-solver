@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/tamnd/kvant-solver/catalog"
 	"github.com/tamnd/kvant-solver/manifest"
 )
 
@@ -198,6 +199,55 @@ func TestTheFirstSyncHasNothingToCarry(t *testing.T) {
 	}
 	if fresh.Count != 1 {
 		t.Errorf("%d issues, the run's own answers should have been left alone", fresh.Count)
+	}
+}
+
+func TestAFindingSurvivesTheSourceItNamesGoingAway(t *testing.T) {
+	// How 1993 is numbered is a disagreement between kvant.digital and the
+	// MCCME mirror. The mirror has been retired, so nothing can ask it again,
+	// and a run that treats its own silence as the finding being gone quietly
+	// deletes three real findings about the magazine.
+	finding := manifest.Erratum{
+		Issue:   "kvant_1993_2",
+		Kind:    "number",
+		Subject: "2",
+		Claims: map[string]string{
+			catalog.SourceDigital: "numbers the year 1-2, 3-4, 9-10, 11-12",
+			catalog.SourceMCCME:   "files this issue under 2",
+		},
+	}
+	gone := map[string]bool{catalog.SourceDigital: true, catalog.SourceMCCME: false}
+	if lookedAt(gone, false, nil)(finding) {
+		t.Error("a finding was called examined by a run that could not reach the source it names")
+	}
+	// With every source answering it is an ordinary index finding, and a run
+	// that no longer sees it means the sources have stopped disagreeing.
+	all := map[string]bool{catalog.SourceDigital: true, catalog.SourceMCCME: true}
+	if !lookedAt(all, false, nil)(finding) {
+		t.Error("a finding both sources could be asked about was not examined")
+	}
+}
+
+func TestReachedNamesEverySourceThatDidNotAnswer(t *testing.T) {
+	errata := &manifest.Errata{}
+	errata.Add(manifest.Erratum{
+		Kind:    "source_unavailable",
+		Subject: catalog.SourceMCCME,
+		Claims:  map[string]string{catalog.SourceMCCME: "retired"},
+	})
+	errata.Add(manifest.Erratum{
+		Kind:    "source_unavailable",
+		Subject: catalog.SourceMathNet,
+		Claims:  map[string]string{catalog.SourceMathNet: "i/o timeout"},
+	})
+	got := reached(errata)
+	if got[catalog.SourceMCCME] || got[catalog.SourceMathNet] {
+		t.Errorf("a source that did not answer counts as read: %v", got)
+	}
+	// kvant.digital is the one source a run cannot get this far without, so
+	// its absence from the outages is the run having read it.
+	if !got[catalog.SourceDigital] {
+		t.Error("the source the run is built on counts as unread")
 	}
 }
 

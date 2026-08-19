@@ -265,6 +265,31 @@ func TestSyncIssueFillsInTheDetail(t *testing.T) {
 	}
 }
 
+func TestTwoSourcesGoingDownAreTwoFindings(t *testing.T) {
+	c := &Catalog{
+		Digital: &fakeDigital{refs: []kvantdigital.IssueRef{ref(1975, "1")}},
+		MCCME:   &fakeMCCME{err: errors.New("the mirror has been retired")},
+		MathNet: &fakeMathNet{err: errors.New("i/o timeout")},
+	}
+	errata := &manifest.Errata{}
+	if _, err := c.SyncIssues(t.Context(), errata); err != nil {
+		t.Fatal(err)
+	}
+	// An entry is matched on its issue, kind and subject, and an outage has no
+	// issue and had no subject either, so the second one overwrote the first
+	// and a run that lost both sources reported losing one.
+	if len(errata.Entries) != 2 {
+		t.Fatalf("%d outages recorded, want 2: %+v", len(errata.Entries), errata.Entries)
+	}
+	named := map[string]bool{}
+	for _, x := range errata.Entries {
+		named[x.Subject] = true
+	}
+	if !named[SourceMCCME] || !named[SourceMathNet] {
+		t.Errorf("the outages name %v", named)
+	}
+}
+
 func TestADeepRunWithoutTheMirrorKeepsTheMirrorsPageRanges(t *testing.T) {
 	c := &Catalog{Digital: &fakeDigital{
 		issue: &kvantdigital.Issue{
