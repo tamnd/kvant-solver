@@ -116,7 +116,19 @@ func (s *Store) Write(name string, v any, note ...string) error {
 		return err
 	}
 
-	tmp, err := os.CreateTemp(s.Dir, "."+name+".*")
+	// A name can put the manifest in a subdirectory, as the evaluation sets and
+	// the reference concordance do. The directory has to be made before the
+	// temporary file goes in it, and the pattern has to be the base name alone,
+	// because CreateTemp reads a separator in a pattern as an error rather than
+	// as a path. Building it from the whole name meant every manifest below the
+	// top level failed to write, and the set that could not be written was
+	// drawn correctly first, so the run reported its work and then lost it.
+	path := s.Path(name)
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	tmp, err := os.CreateTemp(dir, "."+filepath.Base(name)+".*")
 	if err != nil {
 		return err
 	}
@@ -134,5 +146,5 @@ func (s *Store) Write(name string, v any, note ...string) error {
 	if err := os.Chmod(tmp.Name(), 0o644); err != nil {
 		return err
 	}
-	return os.Rename(tmp.Name(), s.Path(name))
+	return os.Rename(tmp.Name(), path)
 }

@@ -411,3 +411,36 @@ func TestCarryLeavesTheYearsARunDidNotVisitAlone(t *testing.T) {
 		t.Errorf("%d entries, the 1980 finding should have been carried across", len(fresh.Entries))
 	}
 }
+
+// A manifest name can put the file in a subdirectory, which the evaluation sets
+// do. Building the temporary file's pattern out of the whole name made
+// CreateTemp read the separator as an error, so every one of those failed to
+// write. The drawing happens first, so a run reported the set it had drawn and
+// then lost it.
+func TestAManifestWritesIntoASubdirectory(t *testing.T) {
+	s := store(t)
+	name := filepath.Join("evaluation", "smoke.yaml")
+	if err := s.Write(name, map[string]int{"problems": 4}, "A set drawn for a test."); err != nil {
+		t.Fatal(err)
+	}
+	if !s.Exists(name) {
+		t.Fatalf("%s was not written", name)
+	}
+	body, err := os.ReadFile(s.Path(name))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(body), "problems: 4") {
+		t.Errorf("the manifest reads:\n%s", body)
+	}
+
+	// The rename has to leave the directory holding the manifest and nothing
+	// else, since a temporary file left behind would be committed alongside it.
+	entries, err := os.ReadDir(filepath.Dir(s.Path(name)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 {
+		t.Errorf("%d files in the directory, want just the manifest", len(entries))
+	}
+}
