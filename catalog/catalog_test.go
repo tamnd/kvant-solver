@@ -3,6 +3,7 @@ package catalog
 import (
 	"context"
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 
@@ -261,6 +262,78 @@ func TestSyncIssueFillsInTheDetail(t *testing.T) {
 	rubrics.Sort()
 	if rubrics.Count != 2 {
 		t.Errorf("%d rubrics", rubrics.Count)
+	}
+}
+
+func TestADeepRunWithoutTheMirrorKeepsTheMirrorsPageRanges(t *testing.T) {
+	c := &Catalog{Digital: &fakeDigital{
+		issue: &kvantdigital.Issue{
+			Year: 1975, Number: "1", Key: "kvant_1975_1",
+			PageCount: 80,
+			URL:       kvantdigital.IssueURL(1975, "1"),
+			Rows: []kvantdigital.TOCRow{
+				{Title: "Задачи М301—М305", Page: 41},
+				{Title: "Равенства из спичек", Page: 12},
+			},
+			Sheets: make([]kvantdigital.Sheet, 84),
+		},
+	}}
+
+	// This is the state an earlier mirrored run leaves behind. Pages is the one
+	// field on a row that kvant.digital cannot fill in, so a plain deep run
+	// setting its own rows over these used to throw every range away.
+	toc := &manifest.TOC{}
+	toc.Set("kvant_1975_1", []manifest.Row{
+		{Title: "Задачи М301—М305", Page: 41, Pages: []int{41, 42, 43}, Source: SourceDigital},
+		{Title: "Равенства из спичек", Page: 12, Pages: []int{12, 13}, Source: SourceDigital},
+	})
+
+	iss, err := manifest.NewIssue(1975, "1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := c.SyncIssue(t.Context(), &iss, toc, nil); err != nil {
+		t.Fatal(err)
+	}
+	rows, _ := toc.Get("kvant_1975_1")
+	if len(rows) != 2 {
+		t.Fatalf("toc has %d rows", len(rows))
+	}
+	if !slices.Equal(rows[0].Pages, []int{41, 42, 43}) {
+		t.Errorf("first row covers %v", rows[0].Pages)
+	}
+	if !slices.Equal(rows[1].Pages, []int{12, 13}) {
+		t.Errorf("second row covers %v", rows[1].Pages)
+	}
+	// The rest of the row is this run's answer, not the old one.
+	if rows[0].Page != 41 {
+		t.Errorf("first row starts at %d", rows[0].Page)
+	}
+}
+
+func TestAnIssueNobodyHasReadBeforeHasNoRangesToKeep(t *testing.T) {
+	c := &Catalog{Digital: &fakeDigital{
+		issue: &kvantdigital.Issue{
+			Year: 1975, Number: "1", Key: "kvant_1975_1",
+			URL:    kvantdigital.IssueURL(1975, "1"),
+			Rows:   []kvantdigital.TOCRow{{Title: "Равенства из спичек", Page: 12}},
+			Sheets: make([]kvantdigital.Sheet, 84),
+		},
+	}}
+	iss, err := manifest.NewIssue(1975, "1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	toc := &manifest.TOC{}
+	if err := c.SyncIssue(t.Context(), &iss, toc, nil); err != nil {
+		t.Fatal(err)
+	}
+	rows, ok := toc.Get("kvant_1975_1")
+	if !ok || len(rows) != 1 {
+		t.Fatalf("toc has %d rows", len(rows))
+	}
+	if rows[0].Pages != nil {
+		t.Errorf("a range appeared out of nowhere: %v", rows[0].Pages)
 	}
 }
 
