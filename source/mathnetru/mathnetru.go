@@ -121,6 +121,141 @@ func ParseContents(r io.Reader) ([]IssueRef, error) {
 	return out, nil
 }
 
+// PaperRef is one article as an issue page lists it.
+//
+// Only the bibliography is taken: what the article is called, who signed it,
+// where it sits in the issue, and the permanent identifier mathnet gives it.
+// The site does hold full text for a good part of this range and none of it is
+// read here, because the archive already has the text from its own sources and
+// what mathnet is worth is the identifier.
+type PaperRef struct {
+	// ID is the identifier in the site's own permanent link, as in kvant2822.
+	// It never changes and it is the reason this manifest is worth keeping:
+	// our tags are ours, and this is the one name for a Kvant article that
+	// somebody outside this project would recognise.
+	ID  string
+	URL string
+
+	Title   string
+	Authors []string
+
+	// PageFirst and PageLast are the printed page range. A one page piece has
+	// them equal, and a piece with no range printed has them zero.
+	PageFirst int
+	PageLast  int
+
+	// FullText is the site's claim that this article has text behind it.
+	FullText bool
+}
+
+var rePaperHref = regexp.MustCompile(`^/rus/` + JournalID + `(\d+)$`)
+
+// reDash splits a printed page range. The site writes it with an en dash and
+// the decoder has already turned the entity into the character.
+var reDash = regexp.MustCompile(`\s*[-–—]\s*`)
+
+// ParseIssue reads the contents of one issue. The reader is the raw
+// Windows-1251 bytes as served.
+//
+// The rows are found off the article links rather than off the table, because
+// the page puts the running head, the cover navigation and the article list in
+// tables that look alike, and the only thing unique to an article is the link.
+func ParseIssue(r io.Reader) ([]PaperRef, error) {
+	utf8, err := source.DecodeWindows1251(r)
+	if err != nil {
+		return nil, err
+	}
+	doc, err := goquery.NewDocumentFromReader(utf8)
+	if err != nil {
+		return nil, err
+	}
+
+	var out []PaperRef
+	seen := map[string]bool{}
+	doc.Find("a.SLink[href]").Each(func(_ int, a *goquery.Selection) {
+		m := rePaperHref.FindStringSubmatch(a.AttrOr("href", ""))
+		if m == nil {
+			return
+		}
+		id := JournalID + m[1]
+		if seen[id] {
+			return
+		}
+		title := clean(a.Text())
+		if title == "" {
+			return
+		}
+		seen[id] = true
+
+		cell := a.Parent()
+		row := a.Closest("tr")
+		ref := PaperRef{
+			ID:      id,
+			URL:     BaseURL + "/rus/" + id,
+			Title:   title,
+			Authors: byline(cell, title),
+			// The marker is an image with the claim in its title attribute,
+			// which is the same way the archive page says it.
+			FullText: strings.Contains(row.Find("img").AttrOr("title", ""), "полный текст"),
+		}
+		ref.PageFirst, ref.PageLast = pages(row)
+		out = append(out, ref)
+	})
+	if len(out) == 0 {
+		return nil, fmt.Errorf("no article links on the issue page, the markup has probably moved")
+	}
+	return out, nil
+}
+
+// byline is the text left in the cell once the title link is taken out of it.
+//
+// The site writes the authors after a <br> with no markup of their own, so
+// there is nothing to select and the remainder is the byline. Splitting on the
+// comma is right here because mathnet writes initials before the surname, so a
+// comma only ever separates two people.
+func byline(cell *goquery.Selection, title string) []string {
+	rest := clean(strings.TrimPrefix(clean(cell.Text()), title))
+	var out []string
+	for part := range strings.SplitSeq(rest, ",") {
+		if name := clean(part); name != "" {
+			out = append(out, name)
+		}
+	}
+	return out
+}
+
+// pages reads the printed range out of the last cell of the row.
+//
+// The cell and not the <nobr> inside it, because the site only reaches for a
+// <nobr> when there is a dash to keep from wrapping. A one page article is a
+// bare number in the cell, and reading the tag instead of the cell silently
+// loses the page of every short piece in the issue.
+func pages(row *goquery.Selection) (first, last int) {
+	text := clean(row.Find("td").Last().Text())
+	if text == "" {
+		return 0, 0
+	}
+	part := reDash.Split(text, 2)
+	first, err := strconv.Atoi(strings.TrimSpace(part[0]))
+	if err != nil {
+		return 0, 0
+	}
+	if len(part) == 1 {
+		return first, first
+	}
+	last, err = strconv.Atoi(strings.TrimSpace(part[1]))
+	if err != nil {
+		return first, first
+	}
+	return first, last
+}
+
+// clean collapses the whitespace, including the non-breaking spaces the site
+// holds initials together with.
+func clean(s string) string {
+	return strings.Join(strings.Fields(strings.ReplaceAll(s, " ", " ")), " ")
+}
+
 // Years returns the years present, newest first, in the order the page lists
 // them.
 func Years(refs []IssueRef) []int {
