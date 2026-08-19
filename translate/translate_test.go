@@ -53,6 +53,99 @@ func TestAnEmptyBodyCostsNothing(t *testing.T) {
 	}
 }
 
+func TestATitleIsTranslatedAsItsOwnCall(t *testing.T) {
+	// The title lives in the front matter, so it never reaches Chunks. Before it
+	// had a call of its own it simply stayed in Russian, on a page whose every
+	// other line was English.
+	f := &fake{answer: func(i int, r api.Request) string {
+		if i == 0 {
+			return "About the quantum"
+		}
+		return r.Input
+	}}
+	res, err := engine(f).Translate(context.Background(),
+		Job{Lang: "en", Title: "О кванте", Body: "Текст."}, nil, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(f.calls) != 2 {
+		t.Fatalf("a title and one chunk cost %d calls", len(f.calls))
+	}
+	if f.calls[0].Input != "О кванте" {
+		t.Fatalf("the first call was sent %q rather than the title", f.calls[0].Input)
+	}
+	if res.Title != "About the quantum" {
+		t.Fatalf("the title came back as %q", res.Title)
+	}
+}
+
+func TestAJobWithNoTitleCostsNoTitleCall(t *testing.T) {
+	f := &fake{}
+	res, err := engine(f).Translate(context.Background(),
+		Job{Lang: "en", Body: "Текст."}, nil, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(f.calls) != 1 {
+		t.Fatalf("a body with no title cost %d calls", len(f.calls))
+	}
+	if res.Title != "" {
+		t.Fatalf("a job with no title came back with %q", res.Title)
+	}
+}
+
+func TestATitleIsTranslatedEvenWhenThereIsNoBody(t *testing.T) {
+	// An article that is all figure and caption still has a title, and the early
+	// return for an empty body used to take the title out with it.
+	f := &fake{answer: func(int, api.Request) string { return "Crossword" }}
+	res, err := engine(f).Translate(context.Background(),
+		Job{Lang: "en", Title: "Кроссворд", Body: "  \n "}, nil, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Title != "Crossword" {
+		t.Fatalf("the title of a bodyless article came back as %q", res.Title)
+	}
+}
+
+func TestATitleThatLostItsMathematicsIsAskedAgain(t *testing.T) {
+	f := &fake{answer: func(i int, r api.Request) string {
+		if i == 0 {
+			return "The number x" // the span is gone
+		}
+		return "The number $x$"
+	}}
+	res, err := engine(f).Translate(context.Background(),
+		Job{Lang: "en", Title: "Число $x$"}, nil, Options{Retries: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(f.calls) != 2 {
+		t.Fatalf("a mangled title was asked again %d times", len(f.calls)-1)
+	}
+	if res.Title != "The number $x$" {
+		t.Fatalf("the second answer was not kept: %q", res.Title)
+	}
+	if len(res.Warnings) != 0 {
+		t.Fatalf("a title that came back right on the retry still warned: %v", res.Warnings)
+	}
+}
+
+func TestATitleThatKeepsLosingItsMathematicsIsReportedAgainstTheTitle(t *testing.T) {
+	f := &fake{answer: func(int, api.Request) string { return "The number x" }}
+	res, err := engine(f).Translate(context.Background(),
+		Job{Lang: "en", Title: "Число $x$"}, nil, Options{Retries: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Warnings) == 0 {
+		t.Fatal("a title that kept losing its span was not reported")
+	}
+	if !strings.HasPrefix(res.Warnings[0], "title:") {
+		t.Fatalf("the warning does not say it is about the title: %q", res.Warnings[0])
+	}
+}
+
 func TestOnlyTheGlossaryRowsTheBodyUsesGoIntoThePrompt(t *testing.T) {
 	// The glossary is the largest part of the prompt and a file shown every row
 	// is a file that goes stale whenever anybody touches anything.

@@ -27,11 +27,17 @@ type Job struct {
 	Key  string
 	Lang string
 	Body string
+	// Title is the article's title, which lives in the front matter rather than
+	// the body and so is not carried by Body. It is empty for the schemas that
+	// have no title, and an empty one costs no call.
+	Title string
 }
 
 // Result is one translated file.
 type Result struct {
-	Body   string
+	Body string
+	// Title is the translated title, empty when the job carried none.
+	Title  string
 	Chunks int
 	// Terms is the glossary rows this file was shown, which is what the stamp
 	// hashes.
@@ -72,43 +78,35 @@ func (e *Engine) Translate(ctx context.Context, job Job, g *glossary.Glossary, o
 		terms = g.Mentioned(job.Body, job.Lang)
 	}
 
-	hash := prompts.Hash(job.Lang)
-	chunks := Chunks(job.Body)
-	if len(chunks) == 0 {
-		return Result{Terms: terms, Prompt: hash, Model: opts.Model}, nil
+	res := Result{Terms: terms, Prompt: prompts.Hash(job.Lang), Model: opts.Model}
+
+	// The title goes first and on its own. It is the field a reader sees before
+	// anything else, and leaving it in Russian on a page whose every sentence is
+	// English is the one place where an unfinished translation looks finished.
+	if job.Title != "" {
+		e.report("title")
+		instructions, input := prompts.Title(job.Title, job.Lang, terms)
+		text, err := e.ask(ctx, "title", instructions, input, job.Title, opts, &res)
+		if err != nil {
+			return res, err
+		}
+		res.Title = text
 	}
 
-	res := Result{Chunks: len(chunks), Terms: terms, Prompt: hash, Model: opts.Model}
+	chunks := Chunks(job.Body)
+	if len(chunks) == 0 {
+		return res, nil
+	}
+	res.Chunks = len(chunks)
 	parts := make([]string, 0, len(chunks))
 
 	for _, c := range chunks {
 		e.report(fmt.Sprintf("chunk %d of %d, %d spans", c.Index, c.Of, c.Spans))
 		instructions, input := prompts.Chunk(c, job.Lang, terms)
-
-		var text string
-		var complaints []string
-		for attempt := 0; ; attempt++ {
-			out, err := e.Client.Complete(ctx, api.Request{
-				Model:        opts.Model,
-				Instructions: instructions,
-				Input:        input,
-			})
-			if err != nil {
-				return res, fmt.Errorf("chunk %d of %d: %w", c.Index, c.Of, err)
-			}
-			res.Usage = add(res.Usage, out.Usage)
-			if out.Model != "" {
-				res.Model = out.Model
-			}
-			text = clean(out.Text)
-			complaints = Verify(c.Body, text)
-			if len(complaints) == 0 || attempt >= opts.Retries {
-				break
-			}
-			e.report(fmt.Sprintf("chunk %d of %d: %s, asking again", c.Index, c.Of, complaints[0]))
-		}
-		for _, complaint := range complaints {
-			res.Warnings = append(res.Warnings, fmt.Sprintf("chunk %d of %d: %s", c.Index, c.Of, complaint))
+		text, err := e.ask(ctx, fmt.Sprintf("chunk %d of %d", c.Index, c.Of),
+			instructions, input, c.Body, opts, &res)
+		if err != nil {
+			return res, err
 		}
 		parts = append(parts, text)
 	}
@@ -116,6 +114,42 @@ func (e *Engine) Translate(ctx context.Context, job Job, g *glossary.Glossary, o
 	res.Body = Join(parts)
 	res.Elapsed = time.Since(start)
 	return res, nil
+}
+
+// ask sends one piece and asks for it again if the mathematics came back
+// changed, giving up after opts.Retries and recording what it gave up on.
+//
+// What survives a retry is still returned rather than dropped. A chunk with one
+// suspect formula and a warning against it is worth more than a hole in the
+// page, and the warning is what the audit reads.
+func (e *Engine) ask(ctx context.Context, what, instructions, input, src string,
+	opts Options, res *Result) (string, error) {
+	var text string
+	var complaints []string
+	for attempt := 0; ; attempt++ {
+		out, err := e.Client.Complete(ctx, api.Request{
+			Model:        opts.Model,
+			Instructions: instructions,
+			Input:        input,
+		})
+		if err != nil {
+			return "", fmt.Errorf("%s: %w", what, err)
+		}
+		res.Usage = add(res.Usage, out.Usage)
+		if out.Model != "" {
+			res.Model = out.Model
+		}
+		text = clean(out.Text)
+		complaints = Verify(src, text)
+		if len(complaints) == 0 || attempt >= opts.Retries {
+			break
+		}
+		e.report(fmt.Sprintf("%s: %s, asking again", what, complaints[0]))
+	}
+	for _, complaint := range complaints {
+		res.Warnings = append(res.Warnings, fmt.Sprintf("%s: %s", what, complaint))
+	}
+	return text, nil
 }
 
 // Verify checks what can be checked without a model.

@@ -12,6 +12,9 @@ import (
 // Prompts is every call the engine makes.
 type Prompts interface {
 	Chunk(c Chunk, lang string, terms []glossary.Term) (instructions, input string)
+	// Title translates an article's title, which is front matter rather than
+	// body and so never reaches Chunk.
+	Title(title, lang string, terms []glossary.Term) (instructions, input string)
 	// Hash fingerprints the wording, so that a file can say which version of the
 	// instruction produced it.
 	Hash(lang string) string
@@ -88,10 +91,44 @@ func (DefaultPrompts) Chunk(c Chunk, lang string, terms []glossary.Term) (string
 	return b.String(), c.Body
 }
 
+// titleRegister is the part of the instruction that is only about titles.
+//
+// A title is held to different things than a paragraph. It has no sentence
+// around it to carry the sense, so a model given the body wording alone tends
+// to unfold it into a description of what the article is about, which is a
+// caption and not a title.
+const titleRegister = `A title is a line and not a sentence. Keep it short, keep the order the
+magazine chose wherever the target language allows it, and do not add a
+subtitle, a gloss or an explanation that was not in the Russian.
+
+Leave any $...$ span exactly as it is and translate the words around it.
+
+Reply with the translated title on one line and nothing else. Do not put
+quotation marks round it unless the Russian had them, and do not add a note
+about what you did.`
+
+// Title translates one article title.
+//
+// It is its own call rather than a line pushed onto the front of the first
+// chunk. A title handed over with a page of prose comes back folded into the
+// first paragraph often enough to matter, and pulling it back out again means
+// guessing where it ended.
+func (DefaultPrompts) Title(title, lang string, terms []glossary.Term) (string, string) {
+	var b strings.Builder
+	fmt.Fprintf(&b, "Translate this title of an article in Квант from Russian into %s.\n\n%s",
+		Language(lang), titleRegister)
+	if len(terms) > 0 {
+		b.WriteString("\n\nUse these renderings for these terms. " +
+			"They are fixed across the whole archive, so a better word here is still the wrong word:\n\n")
+		b.WriteString(Table(terms, lang))
+	}
+	return b.String(), title
+}
+
 // Hash fingerprints the instruction a translation was written under.
 //
-// Only the part that is the same for every chunk of every file goes in: the
-// register, and which language it was asked for. The glossary rows are left out
+// Only the part that is the same for every chunk of every file goes in: the two
+// registers, and which language it was asked for. The glossary rows are left out
 // because they have their own hash and their own test, and the part of a chunk
 // prompt, because a body that split into three pieces one day and four the next
 // has not changed what it is being asked for.
@@ -100,7 +137,7 @@ func (DefaultPrompts) Chunk(c Chunk, lang string, terms []glossary.Term) (string
 // that is the right answer. The register is the thing the translation is being
 // held to, so changing it means every file was held to something else.
 func (DefaultPrompts) Hash(lang string) string {
-	sum := sha256.Sum256([]byte(register + "\x00" + Language(lang)))
+	sum := sha256.Sum256([]byte(register + "\x00" + titleRegister + "\x00" + Language(lang)))
 	return hex.EncodeToString(sum[:])
 }
 
