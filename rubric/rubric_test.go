@@ -176,3 +176,34 @@ func TestAnEmptyBannerIsNothing(t *testing.T) {
 		t.Fatalf("blank resolved to %+v, want the zero rubric", got)
 	}
 }
+
+// Everything downstream of the assembler has a slug and not a banner, because
+// that is what the file records. Reading the table that way round has to give
+// back the same rubric reading it the other way round does.
+func TestASlugResolvesBackToItsSection(t *testing.T) {
+	for _, printed := range []string{"Основные статьи", "Смесь"} {
+		want := rubric.Canonical(printed)
+		got := rubric.BySlug(want.Slug)
+		if got != want {
+			t.Errorf("%q went to %+v and came back as %+v", printed, want, got)
+		}
+	}
+}
+
+// A corpus written before a section was added to the table is old and not
+// wrong, so an unknown slug is usable rather than empty.
+func TestASlugNobodyHasSeenIsStillUsable(t *testing.T) {
+	got := rubric.BySlug("kakoy-to-novyiy-razdel")
+	if got.Known {
+		t.Errorf("%+v came back as a section of the magazine", got)
+	}
+	if got.Slug != "kakoy-to-novyiy-razdel" || got.Title == "" {
+		t.Errorf("got %+v, want the slug kept and something to show", got)
+	}
+}
+
+func TestAnEmptySlugIsNothing(t *testing.T) {
+	if got := rubric.BySlug(""); got.Slug != "" || got.Title != "" {
+		t.Fatalf("blank resolved to %+v, want the zero rubric", got)
+	}
+}
