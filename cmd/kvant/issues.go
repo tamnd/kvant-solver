@@ -75,7 +75,7 @@ func runIssuesSync(args []string) error {
 	errata := &manifest.Errata{}
 	var issues *manifest.Issues
 	finish := func(toc *manifest.TOC, rubrics *manifest.Rubrics) error {
-		errata.Carry(old, lookedAt(*deep && *mirror, *f.years))
+		errata.Carry(old, lookedAt(reached(errata), *deep && *mirror, *f.years))
 		return writeAll(store, issues, toc, rubrics, errata)
 	}
 
@@ -160,8 +160,19 @@ func carryDeep(store *manifest.Store, fresh *manifest.Issues) error {
 // issue's contents only counts as examined when the issue was read again, which
 // takes a deep run with the mirror on, and a run limited to a year or two only
 // speaks for those years.
-func lookedAt(mirrored bool, years []int) func(manifest.Erratum) bool {
+//
+// A finding is a disagreement between sources, so a run that could not reach
+// one of the sources it names has not looked at it at all, whatever its kind
+// says. That is not a hypothetical: the MCCME mirror was retired, and the first
+// sync afterwards threw away the three findings about how 1993 is numbered,
+// because they are a disagreement with a site that no longer answers.
+func lookedAt(read map[string]bool, mirrored bool, years []int) func(manifest.Erratum) bool {
 	return func(x manifest.Erratum) bool {
+		for source := range x.Claims {
+			if !read[source] {
+				return false
+			}
+		}
 		if x.Kind != "toc_row" && x.Kind != "toc_ordering" {
 			return true
 		}
@@ -170,6 +181,28 @@ func lookedAt(mirrored bool, years []int) func(manifest.Erratum) bool {
 		}
 		return len(years) == 0 || slices.Contains(years, manifest.KeyYear(x.Issue))
 	}
+}
+
+// reached is the sources this run got an answer from.
+//
+// Taken from the run's own findings rather than kept as a second list, because
+// a run already records every source it could not reach as it goes, and two
+// lists of the same thing drift apart.
+func reached(errata *manifest.Errata) map[string]bool {
+	out := map[string]bool{
+		catalog.SourceDigital: true,
+		catalog.SourceMCCME:   true,
+		catalog.SourceMathNet: true,
+	}
+	for _, x := range errata.Entries {
+		if x.Kind != "source_unavailable" {
+			continue
+		}
+		for source := range x.Claims {
+			out[source] = false
+		}
+	}
+	return out
 }
 
 // deepSync walks the issues one at a time. It is deliberately serial: the

@@ -31,8 +31,9 @@ func (c *Catalog) addMirror(ctx context.Context, out *manifest.Issues, errata *m
 		// The mirror carries the typeset text for 1970 to 2003, which is a
 		// third of the archive, but the run can still write what it has.
 		errata.Add(manifest.Erratum{
-			Kind:   "source_unavailable",
-			Claims: map[string]string{SourceMCCME: err.Error()},
+			Kind:    "source_unavailable",
+			Subject: SourceMCCME,
+			Claims:  map[string]string{SourceMCCME: err.Error()},
 		})
 		return nil
 	}
