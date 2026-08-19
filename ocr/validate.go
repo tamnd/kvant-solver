@@ -43,7 +43,7 @@ const MaxIllegible = 4
 // in the failures report, and the retry policy reads it.
 type Rule string
 
-// The eight rules, in the order Validate runs them.
+// The nine rules, in the order Validate runs them.
 const (
 	RuleShort     Rule = "short"     // 1, empty or under MinChars
 	RuleMath      Rule = "math"      // 2, unbalanced $ or $$
@@ -599,11 +599,20 @@ func ParseRules(reason string) []Rule {
 	return out
 }
 
-// AllRules is the eight in the order Validate runs them, for the reports that
+// AllRules is the nine in the order Validate runs them, for the reports that
 // print a column per rule.
+//
+// Adding a rule means adding it here as well, and the cost of forgetting is not
+// a missing column. ParseRules reads this list to turn a stored reason back into
+// the rule that produced it, so a rule absent from it is a rule the failure
+// report cannot name: rule 9 was left off when it was written, and every page it
+// killed came back classed "no rule", which the report glosses as the service
+// failing rather than the page. Fifty eight pages of the Soviet decades were
+// filed under an outage that never happened.
 var AllRules = []Rule{
 	RuleShort, RuleMath, RuleLeak, RuleLanguage,
 	RuleFolio, RuleIllegible, RuleLaTeX, RuleScript,
+	RuleRunaway,
 }
 
 // Rules returns the distinct rules that rejected a page, which is what the
