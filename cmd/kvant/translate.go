@@ -24,7 +24,7 @@ func runTranslate(args []string) error {
 	from := fs.String("from", "ru", "the language to translate out of")
 	lang := fs.String("lang", "en", "the language to translate into")
 	year := fs.Int("year", 0, "restrict to one year, 0 for the whole corpus")
-	issue := fs.String("issue", "", "restrict to one issue, for example 1975-08")
+	issue := fs.String("issue", "", "restrict to one issue, for example kvant_1975_8")
 	model := fs.String("model", "gpt-5", "which model to translate with")
 	endpoint := fs.String("endpoint", "http://127.0.0.1:8077/v1/chat/completions", "the chatgpt-tool serve endpoint")
 	apiKey := fs.String("key", os.Getenv("KVANT_API_KEY"), "API key for the endpoint")
