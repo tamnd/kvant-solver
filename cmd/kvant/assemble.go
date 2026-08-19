@@ -65,6 +65,8 @@ func runAssemble(args []string) error {
 		rows, _ := toc.Get(issues[i].Key)
 		result := assemble.Issue(key, rows, pages)
 
+		// Read before the clear, because the clear is what would destroy it.
+		onDisk := typedOnDisk(c, *lang, key)
 		if *clean {
 			if err := clearArticles(c, *lang, key); err != nil {
 				return err
@@ -75,6 +77,12 @@ func runAssemble(args []string) error {
 			body, extraction, why := preferTyped(text, key, article, read)
 			if why != "" {
 				fmt.Printf("  publisher_fragment %s %s\n", article.Slug, why)
+			}
+			if extraction != corpus.ExtractionPublisher {
+				if kept, ok := onDisk[articleID(key, article.Slug)]; ok {
+					fmt.Printf("  kept_publisher_text %s the cache has none for it and what this issue already holds is the publisher's own\n", article.Slug)
+					body, extraction = kept, corpus.ExtractionPublisher
+				}
 			}
 			if extraction == corpus.ExtractionPublisher {
 				typed++
@@ -146,6 +154,50 @@ func preferTyped(store publisher.Store, key corpus.IssueKey, article assemble.Ar
 		return article.Body, extractionOf(article, read), why
 	}
 	return publisher.Titled(article.Title, text), corpus.ExtractionPublisher, ""
+}
+
+// typedOnDisk is the publisher's text this issue already holds, by article id.
+//
+// That text comes out of a cache assemble is given the path of, so a run
+// pointed at a different cache, or at one nobody has pulled into, finds nothing
+// and falls back to the reading of the pages. For an article being built the
+// first time that is the right answer. For one that already holds the
+// publisher's own text it is the wrong one, because a model reading a scan
+// cannot beat the text it is a reading of.
+//
+// Reassembling an issue to correct a byline used to replace the better source
+// with the worse one and say nothing about it, which is how two articles in
+// 1975 lost their ё, their formulas, and the markers saying which parts of them
+// had not been read at all.
+//
+// It is keyed by id rather than by filename because the ordinal is in the
+// filename, and a row moving up the contents must not lose the text with it.
+func typedOnDisk(c *corpus.Corpus, lang string, key corpus.IssueKey) map[string]string {
+	out := map[string]string{}
+	names, err := c.Articles(lang, key)
+	if err != nil {
+		return out
+	}
+	dir := filepath.Join(c.IssueDir(lang, key), "articles")
+	for _, name := range names {
+		front := &corpus.ArticleFront{}
+		body, err := corpus.LoadUnchecked(filepath.Join(dir, name), front)
+		if err != nil || front.Extraction != corpus.ExtractionPublisher {
+			continue
+		}
+		out[front.ID] = body
+	}
+	return out
+}
+
+// articleID is the name an article goes by, or "" for one that cannot have a
+// name, which is a row assemble is about to complain about anyway.
+func articleID(key corpus.IssueKey, slug string) string {
+	id, err := corpus.NewArticleID(key, slug)
+	if err != nil {
+		return ""
+	}
+	return id.String()
 }
 
 // writeArticle puts one assembled article in the corpus.
