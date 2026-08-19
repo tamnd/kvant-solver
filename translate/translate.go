@@ -141,7 +141,8 @@ func Verify(src, out string) []string {
 		return complaints
 	}
 	for i := range before {
-		if before[i].Text == after[i].Text && before[i].Display == after[i].Display {
+		if before[i].Display == after[i].Display &&
+			maskProse(before[i].Text) == maskProse(after[i].Text) {
 			continue
 		}
 		complaints = append(complaints, fmt.Sprintf(
@@ -152,6 +153,89 @@ func Verify(src, out string) []string {
 		break
 	}
 	return complaints
+}
+
+// proseCommand is the LaTeX that sets words inside a formula rather than
+// mathematics. \operatorname is deliberately not here: it names a function, and
+// tg and sin are notation rather than words to be carried into another
+// language.
+var proseCommand = map[string]bool{
+	`\text`: true, `\textrm`: true, `\textit`: true,
+	`\textbf`: true, `\textsf`: true, `\mbox`: true,
+}
+
+// maskProse blanks the argument of \text and its relatives, leaving everything
+// else in the span alone.
+//
+// Rule 2 holds the mathematics of a span to exactly what it was, and the
+// argument of \text is not mathematics. It is the words that happen to be set
+// inside a formula, and a unit written out as a Russian word has to come back
+// translated the same way the sentence around it does. Comparing spans byte for
+// byte cannot tell that apart from retyped algebra, so it called every such
+// span a rewrite, spent the chunk's one retry asking again for a chunk that was
+// already right, and then filed a warning about the correct answer. Masking the
+// prose still compares the algebra either side of it exactly, which is the part
+// the rule was written for.
+func maskProse(s string) string {
+	var b strings.Builder
+	rs := []rune(s)
+	for i := 0; i < len(rs); {
+		if rs[i] != '\\' {
+			b.WriteRune(rs[i])
+			i++
+			continue
+		}
+		j := i + 1
+		for j < len(rs) && isLetter(rs[j]) {
+			j++
+		}
+		// A backslash that names nothing is an escape, and the character it
+		// escapes goes through with it so that a literal \{ is not read as the
+		// start of an argument.
+		if j == i+1 {
+			b.WriteRune(rs[i])
+			if j < len(rs) {
+				b.WriteRune(rs[j])
+				j++
+			}
+			i = j
+			continue
+		}
+		name := string(rs[i:j])
+		if !proseCommand[name] || j >= len(rs) || rs[j] != '{' {
+			b.WriteString(name)
+			i = j
+			continue
+		}
+		b.WriteString(name)
+		b.WriteString("{}")
+		i = skipGroup(rs, j)
+	}
+	return b.String()
+}
+
+// skipGroup returns the index just past the brace group starting at open. An
+// unbalanced group runs to the end, which leaves the span comparing unequal to
+// anything else and so is reported rather than passed.
+func skipGroup(rs []rune, open int) int {
+	depth := 0
+	for i := open; i < len(rs); i++ {
+		switch rs[i] {
+		case '\\':
+			i++
+		case '{':
+			depth++
+		case '}':
+			if depth--; depth == 0 {
+				return i + 1
+			}
+		}
+	}
+	return len(rs)
+}
+
+func isLetter(r rune) bool {
+	return r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z'
 }
 
 // clean strips the wrapper a model puts round a reply however plainly it was

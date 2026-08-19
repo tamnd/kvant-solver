@@ -209,6 +209,50 @@ func TestVerifyNoticesAnUnclosedSpan(t *testing.T) {
 	}
 }
 
+func TestAUnitSetInProseInsideAFormulaIsAllowedToBeTranslated(t *testing.T) {
+	// The words inside \text are words. Holding them to the source is holding the
+	// translation to not being one, and it used to cost the chunk its retry as
+	// well as filing a warning against the right answer.
+	if c := Verify(`$t = 5 \text{ сек}$`, `$t = 5 \text{ sec}$`); len(c) != 0 {
+		t.Fatalf("a translated unit was called a rewrite: %v", c)
+	}
+	if c := Verify(`$v = 3 \textrm{ м/сек}$`, `$v = 3 \textrm{ m/sec}$`); len(c) != 0 {
+		t.Fatalf("a translated unit in \\textrm was called a rewrite: %v", c)
+	}
+	if c := Verify(`$\mbox{при } x > 0$`, `$\mbox{for } x > 0$`); len(c) != 0 {
+		t.Fatalf("a translated word in \\mbox was called a rewrite: %v", c)
+	}
+}
+
+func TestTheAlgebraAroundTranslatedProseIsStillHeldExactly(t *testing.T) {
+	// The whole reason the rule exists. Masking the prose must not become a way
+	// for a retyped formula to travel next to it unnoticed.
+	if c := Verify(`$t = 5 \text{ сек}$`, `$t = 6 \text{ sec}$`); len(c) == 0 {
+		t.Fatal("a number changed beside a translated unit was not noticed")
+	}
+	if c := Verify(`$a^2 + b^2 \text{ где } c$`, `$a^2 - b^2 \text{ where } c$`); len(c) == 0 {
+		t.Fatal("a sign changed beside a translated word was not noticed")
+	}
+	if c := Verify(`$\operatorname{tg} x$`, `$\operatorname{tan} x$`); len(c) == 0 {
+		t.Fatal("a function name is notation and was not held to the source")
+	}
+}
+
+func TestProseIsMaskedWithoutLosingTrackOfTheBraces(t *testing.T) {
+	// A brace inside the argument, and an escaped brace, both used to be able to
+	// end the group early and leave the rest of the span compared against the
+	// wrong offset.
+	if c := Verify(`$\text{a {b} c} + x$`, `$\text{d {e} f} + x$`); len(c) != 0 {
+		t.Fatalf("a nested group inside prose was mishandled: %v", c)
+	}
+	if c := Verify(`$\text{a \{ b} + x$`, `$\text{c \{ d} + x$`); len(c) != 0 {
+		t.Fatalf("an escaped brace inside prose was mishandled: %v", c)
+	}
+	if c := Verify(`$\text{a} + x$`, `$\text{b} - x$`); len(c) == 0 {
+		t.Fatal("a change after the prose group was not noticed")
+	}
+}
+
 func TestAChunkIsToldItIsAChunk(t *testing.T) {
 	// Without this it writes an opening sentence for a piece that starts in the
 	// middle and rounds off a piece that does not end.
