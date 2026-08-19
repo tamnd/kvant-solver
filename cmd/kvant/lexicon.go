@@ -1,8 +1,12 @@
 package main
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
+	"io"
 	"os"
+	"path/filepath"
 	"sort"
 
 	"github.com/spf13/pflag"
@@ -10,6 +14,22 @@ import (
 	"github.com/tamnd/kvant-solver/corpus"
 	"github.com/tamnd/kvant-solver/lexicon"
 )
+
+// sha256File is what pins the header to a particular wordlist. The name of a
+// download says nothing about which download it was.
+func sha256File(path string) (string, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = file.Close() }()
+
+	sum := sha256.New()
+	if _, err := io.Copy(sum, file); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(sum.Sum(nil)), nil
+}
 
 func runLexicon(args []string) error {
 	if len(args) == 0 {
@@ -40,6 +60,8 @@ func runLexiconBuild(args []string) error {
 	root := fs.String("corpus", os.Getenv("KVANT_CORPUS"), "path to a tamnd/kvant checkout")
 	lang := fs.String("lang", corpus.DefaultLang, "the tree to read")
 	min := fs.Int("min", lexicon.MinCount, "how often a form must appear before it is a word")
+	wordlist := fs.String("wordlist", "", "a file of Russian word forms to add to the ones the corpus uses")
+	source := fs.String("wordlist-source", "", "where that file came from, written into the header")
 	dry := fs.Bool("dry-run", false, "print the counts and write nothing")
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -53,19 +75,45 @@ func runLexiconBuild(args []string) error {
 	if err != nil {
 		return err
 	}
-	forms := lexicon.Forms(count, *min)
+	mine := lexicon.Forms(count, *min)
+	forms := mine
 
 	fmt.Printf("%d distinct forms in the corpus, %d of them seen at least %d times\n",
-		len(count), len(forms), *min)
+		len(count), len(mine), *min)
 	if len(count) == 0 {
 		return fmt.Errorf("no pages under %s, so there is nothing to build a lexicon from", c.Root)
+	}
+
+	header := []string{
+		"Russian word forms rule 8 recognises. Built by kvant lexicon build, do not edit.",
+		fmt.Sprintf("%d forms from the %s pages of this corpus, seen at least %d times.", len(mine), *lang, *min),
+	}
+	if *wordlist != "" {
+		theirs, err := lexicon.Wordlist(*wordlist)
+		if err != nil {
+			return err
+		}
+		sum, err := sha256File(*wordlist)
+		if err != nil {
+			return err
+		}
+		forms = lexicon.Merge(mine, theirs)
+		fmt.Printf("%d usable forms from %s, %d forms in all\n", len(theirs), *wordlist, len(forms))
+		where := *source
+		if where == "" {
+			where = filepath.Base(*wordlist)
+		}
+		header = append(header,
+			fmt.Sprintf("%d forms from %s, sha256 %s,", len(theirs), where, sum),
+			"kept where they are Cyrillic throughout and at least four letters, which is what a reading can be.",
+		)
 	}
 	if *dry {
 		fmt.Println("dry run, nothing written")
 		return nil
 	}
 	path := lexicon.Path(c.Root)
-	if err := lexicon.Write(path, forms); err != nil {
+	if err := lexicon.Write(path, forms, header...); err != nil {
 		return err
 	}
 	fmt.Printf("wrote %s\n", path)

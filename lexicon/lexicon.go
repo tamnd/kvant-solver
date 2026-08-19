@@ -240,6 +240,78 @@ func cyrillicOnly(word string) bool {
 // one-offs out.
 const MinCount = 2
 
+// Wordlist reads an external list of Russian word forms and keeps the ones
+// Resolves could ever ask about.
+//
+// The corpus cannot be the only source and it took a while to see why. Collect
+// reads the pages a model has already produced, so the lexicon knows the words
+// of the pages that were accepted and nothing else, and the words it is asked
+// about come off the pages that were not. It knew 16929 forms against a language
+// that inflects into millions, so однako was placed because однако happens to be
+// common and олимпiadам was counted because олимпиадам had not come up yet. That
+// is not a judgement about the page, it is a judgement about which pages had
+// been read first, and rule 8 was killing 1182 pages of 1970 to 1989 partly on
+// it. Rebuilding from more of the corpus does not fix it: the pages that would
+// carry the missing words are the pages being refused.
+//
+// Filtering here rather than at the point of use, because a form that is not a
+// possible reading is weight in a file somebody has to commit. Readings are
+// letters only and never shorter than MinLen, so a hyphenated form or a two
+// letter particle can never be looked up, and dropping them takes 1.53 million
+// forms down to 906 thousand.
+//
+// Nothing about the wordlist is trusted beyond membership. It says which strings
+// are Russian words, and every other question, whether this word was the one on
+// the page and whether the reading is unambiguous, is still Resolves's to answer
+// the way it answered before.
+func Wordlist(path string) ([]string, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = file.Close() }()
+
+	seen := map[string]bool{}
+	scan := bufio.NewScanner(file)
+	scan.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	for scan.Scan() {
+		form := strings.ToLower(strings.TrimSpace(scan.Text()))
+		if form == "" || strings.HasPrefix(form, "#") {
+			continue
+		}
+		if len([]rune(form)) < MinLen || !cyrillicOnly(form) {
+			continue
+		}
+		seen[form] = true
+	}
+	if err := scan.Err(); err != nil {
+		return nil, err
+	}
+	out := make([]string, 0, len(seen))
+	for form := range seen {
+		out = append(out, form)
+	}
+	sort.Strings(out)
+	return out, nil
+}
+
+// Merge puts two lists of forms together, sorted and without duplicates, which
+// is the shape Write wants.
+func Merge(lists ...[]string) []string {
+	seen := map[string]bool{}
+	for _, list := range lists {
+		for _, form := range list {
+			seen[strings.ToLower(form)] = true
+		}
+	}
+	out := make([]string, 0, len(seen))
+	for form := range seen {
+		out = append(out, form)
+	}
+	sort.Strings(out)
+	return out
+}
+
 // Collect counts the Russian words in a corpus.
 //
 // Only the words that are Cyrillic throughout. A mixed word is the thing being
@@ -284,13 +356,19 @@ func Forms(count map[string]int, min int) []string {
 	return out
 }
 
-// Write saves a lexicon, one form to a line.
+// Write saves a lexicon, one form to a line, under a header of comment lines.
 //
 // A plain sorted list rather than YAML or the counts as well, because this file
 // is committed and read in diffs. Adding a year to the corpus should show up as
 // the words that year brought and nothing else, and carrying the frequencies
 // would rewrite every line on every build.
-func Write(path string, forms []string) error {
+//
+// The header is there because the file stopped being made of only the corpus.
+// Most of what is in it now comes from a wordlist that was downloaded once, and
+// a reader who cannot see that has no way to tell a form the archive uses from
+// a form somebody imported, or to rebuild the file at all. Lines starting with
+// a hash, which Load skips, so the format did not have to change.
+func Write(path string, forms []string, header ...string) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
@@ -301,6 +379,12 @@ func Write(path string, forms []string) error {
 	defer func() { _ = os.Remove(temp.Name()) }()
 
 	w := bufio.NewWriter(temp)
+	for _, line := range header {
+		if _, err := fmt.Fprintf(w, "# %s\n", line); err != nil {
+			_ = temp.Close()
+			return err
+		}
+	}
 	for _, form := range forms {
 		if _, err := fmt.Fprintln(w, form); err != nil {
 			_ = temp.Close()
@@ -330,9 +414,10 @@ func Load(path string) (*Lexicon, error) {
 	scan.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 	for scan.Scan() {
 		form := strings.TrimSpace(scan.Text())
-		if form != "" {
-			l.forms[strings.ToLower(form)] = true
+		if form == "" || strings.HasPrefix(form, "#") {
+			continue
 		}
+		l.forms[strings.ToLower(form)] = true
 	}
 	return l, scan.Err()
 }
