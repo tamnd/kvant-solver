@@ -176,7 +176,17 @@ func (a *Audit) Add(path string, s Staleness) {
 // files.
 func (a *Audit) Clean() bool { return len(a.Stale) == 0 }
 
-// Report is reports/translation-audit.md.
+// method is how staleness is decided, and it is the same sentence whichever
+// language is being reported on, so a combined report says it once at the top
+// rather than four times over.
+const method = "Staleness is decided by reading the files and makes no model call. " +
+	"A file is stale when the Russian it was translated from has changed, " +
+	"or when a glossary row it was actually shown has changed. " +
+	"A glossary version bump on its own does not make a file stale, " +
+	"because otherwise adding one term would invalidate the whole corpus.\n"
+
+// Report is one language on its own, which is what the command prints at the
+// end of a run.
 func (a *Audit) Report() string {
 	var b strings.Builder
 	b.WriteString("# Translation audit: " + a.Lang + "\n\n")
@@ -184,27 +194,77 @@ func (a *Audit) Report() string {
 		b.WriteString("Nothing has been translated into this language yet.\n")
 		return b.String()
 	}
-	b.WriteString(plural(a.Checked, "file") + " checked, " + itoa(a.Current) +
-		" current, " + itoa(len(a.Stale)) + " stale, " + itoa(len(a.Missing)) + " not translated yet.\n\n")
-	b.WriteString("Staleness is decided by reading the files and makes no model call. " +
-		"A file is stale when the Russian it was translated from has changed, " +
-		"or when a glossary row it was actually shown has changed. " +
-		"A glossary version bump on its own does not make a file stale, " +
-		"because otherwise adding one term would invalidate the whole corpus.\n")
+	b.WriteString(a.counts() + "\n")
+	b.WriteString(method)
+	b.WriteString(a.lists("##"))
+	return b.String()
+}
+
+// Combined is reports/translation-audit.md, which covers every language rather
+// than whichever one the command happened to be run for last.
+//
+// The file used to be written from the single run's audit, under a path that
+// did not mention the language. Translating into Vietnamese therefore replaced
+// the English report with Vietnamese numbers under a heading that still said
+// English, and there was nothing in the file to say so. Staleness costs no model
+// call, so working out all four languages is as cheap as working out one, and a
+// reader comparing coverage wants them side by side anyway.
+// scope says what was walked, because a run restricted to one year produces a
+// report that looks exactly like a run over everything.
+func Combined(scope string, audits []*Audit) string {
+	var b strings.Builder
+	b.WriteString("# Translation audit\n\n")
+	b.WriteString("Covering " + scope + ".\n\n")
+	b.WriteString(method)
+	for _, a := range audits {
+		b.WriteString("\n## " + Language(a.Lang) + "\n\n")
+		if a.Checked == 0 {
+			b.WriteString("Nothing has been translated into this language yet.\n")
+			continue
+		}
+		b.WriteString(a.counts())
+		b.WriteString(a.lists("###"))
+	}
+	return b.String()
+}
+
+func (a *Audit) counts() string {
+	return plural(a.Checked, "file") + " checked, " + itoa(a.Current) +
+		" current, " + itoa(len(a.Stale)) + " stale, " + itoa(len(a.Missing)) + " not translated yet.\n"
+}
+
+// lists is the two enumerations, under headings of whatever depth the document
+// around them is using.
+func (a *Audit) lists(heading string) string {
+	var b strings.Builder
 	if len(a.Stale) > 0 {
-		b.WriteString("\n## Stale\n\n")
+		b.WriteString("\n" + heading + " Stale\n\n")
 		for _, f := range a.Stale {
 			b.WriteString("- `" + f.Path + "`: " + f.Reason + "\n")
 		}
 	}
 	if len(a.Missing) > 0 {
-		b.WriteString("\n## Not translated yet\n\n")
-		for _, p := range a.Missing {
+		b.WriteString("\n" + heading + " Not translated yet\n\n")
+		shown := a.Missing
+		if len(shown) > missingShown {
+			shown = shown[:missingShown]
+		}
+		for _, p := range shown {
 			b.WriteString("- `" + p + "`\n")
+		}
+		if rest := len(a.Missing) - len(shown); rest > 0 {
+			b.WriteString("\nand " + itoa(rest) + " more, not listed.\n")
 		}
 	}
 	return b.String()
 }
+
+// missingShown is how many untranslated paths one language lists before the
+// report gives the count instead. A language nobody has started on has every
+// file in the corpus under this heading, and nobody reads five thousand paths to
+// learn that none of them exist. The stale list is deliberately not capped: it
+// is the one somebody has to act on, and M10 is finished when it is empty.
+const missingShown = 50
 
 func plural(n int, word string) string {
 	if n == 1 {
