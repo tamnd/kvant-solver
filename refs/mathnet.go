@@ -1,6 +1,7 @@
 package refs
 
 import (
+	"errors"
 	"fmt"
 	"io/fs"
 	"path/filepath"
@@ -332,6 +333,44 @@ func (m *MathNet) Check() error {
 		tags[p.To] = p.ID
 	}
 	return nil
+}
+
+// Held turns a concordance already on disk back into what the fetch would have
+// returned, so a run can skip the issues a previous one got.
+//
+// A sweep of the site is a hundred and sixty three requests to a server that
+// times out often enough to lose one, and losing one used to mean throwing away
+// every issue fetched before it. A bibliography does not change, so the honest
+// thing to refetch is the issues we do not have and nothing else.
+//
+// The matching is redone from these rather than the stored tags being kept,
+// which is the other reason to go back through PaperRef: every rerun matches
+// against the corpus as it is now, so an issue that gets assembled links up
+// without anybody going back to the site for it.
+func (m *MathNet) Held() map[string][]mathnetru.PaperRef {
+	out := map[string][]mathnetru.PaperRef{}
+	for _, p := range m.Papers {
+		out[p.Issue] = append(out[p.Issue], mathnetru.PaperRef{
+			ID: p.ID, URL: p.URL,
+			Title: p.Title, Authors: p.Authors,
+			PageFirst: p.PageFirst, PageLast: p.PageLast,
+			FullText: p.FullText,
+		})
+	}
+	return out
+}
+
+// ReadMathNet reads the concordance already on disk. A missing file is not an
+// error, because the first run is the case where there is nothing to resume.
+func ReadMathNet(store *manifest.Store) (*MathNet, error) {
+	m := &MathNet{}
+	switch err := store.Read(MathNetFile, m); {
+	case errors.Is(err, manifest.ErrMissing):
+		return &MathNet{}, nil
+	case err != nil:
+		return nil, err
+	}
+	return m, nil
 }
 
 // SaveMathNet writes manifests/refs/mathnet.yaml.

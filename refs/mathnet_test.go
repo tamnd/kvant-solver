@@ -3,6 +3,7 @@ package refs_test
 import (
 	"fmt"
 	"path/filepath"
+	"reflect"
 	"testing"
 
 	"github.com/tamnd/kvant-solver/corpus"
@@ -229,6 +230,49 @@ func TestAPaperFromBeforeMathnetHoldsKvantIsRefused(t *testing.T) {
 	}}
 	if err := m.Check(); err == nil {
 		t.Fatal("a paper from before the run was accepted")
+	}
+}
+
+// The resume path. What a run got from the site has to come back out of the
+// manifest in the shape the next run would have fetched, or the next run asks
+// for all of it again.
+func TestWhatTheManifestHoldsComesBackAsSomethingToMatchAgain(t *testing.T) {
+	c := mathnetCorpus(t)
+	want := paper("kvant2006", "Нанотехнологии: когда размер имеет значение", 6, 12)
+	want.Authors = []string{"А. Н. Иванов", "Б. В. Петров"}
+	m := concord(t, c, want)
+
+	held := m.Held()
+	got := held["kvant_2008_3"]
+	if len(got) != 1 {
+		t.Fatalf("%d papers came back for the issue", len(got))
+	}
+	if !reflect.DeepEqual(got[0], want) {
+		t.Fatalf("got %+v, want %+v", got[0], want)
+	}
+
+	// And matching it a second time has to land in the same place, because a
+	// resumed run rebuilds every row from these.
+	again := concord(t, c, got...)
+	if again.Linked != m.Linked || row(t, again, "kvant2006").To != row(t, m, "kvant2006").To {
+		t.Errorf("a resumed run matched differently")
+	}
+}
+
+// The first run is the case where there is nothing to resume, and a missing
+// file is what that looks like.
+func TestResumingWithNoManifestYetIsNotAnError(t *testing.T) {
+	c := mathnetCorpus(t)
+	store, err := refs.Store(c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, err := refs.ReadMathNet(store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(m.Held()) != 0 {
+		t.Errorf("something came out of a manifest that is not there")
 	}
 }
 
