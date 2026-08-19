@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/spf13/pflag"
 
@@ -17,6 +18,7 @@ func runPublish(args []string) error {
 	lang := fs.String("lang", corpus.DefaultLang, "the tree to publish, one language per site")
 	quiet := fs.Bool("quiet", false, "print the totals and nothing else")
 	strict := fs.Bool("strict", false, "fail if any formula could not be typeset")
+	report := fs.String("report", "", "write the formulas that could not be typeset to this file")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -33,6 +35,11 @@ func runPublish(args []string) error {
 	}
 
 	stats, err := site.Build()
+	if *report != "" {
+		if err := writeRefused(*report, site); err != nil {
+			return err
+		}
+	}
 	fmt.Printf("wrote %d files: %d issues, %d articles, %d pages\n",
 		stats.Files, stats.Issues, stats.Articles, stats.Pages)
 	if stats.BadMath > 0 {
@@ -40,4 +47,21 @@ func runPublish(args []string) error {
 			stats.BadMath)
 	}
 	return err
+}
+
+// writeRefused writes the report of what the build could not typeset.
+//
+// It is written even when the build failed, because a run that stopped part way
+// still learned something and throwing it away means reading the whole corpus
+// again to learn it twice.
+func writeRefused(path string, site *publish.Site) error {
+	f, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = f.Close() }()
+	if err := publish.WriteRefused(f, site.Refused(), time.Now().Format(time.DateOnly)); err != nil {
+		return err
+	}
+	return f.Close()
 }
