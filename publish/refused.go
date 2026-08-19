@@ -118,3 +118,11 @@ func count(n int, one, many string) string {
 	}
 	return strconv.Itoa(n) + " " + many
 }
+
+// verb agrees with a count that count already formatted.
+func verb(n int, singular, plural string) string {
+	if n == 1 {
+		return singular
+	}
+	return plural
+}

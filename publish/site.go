@@ -36,6 +36,9 @@ type Site struct {
 	render  *Renderer
 	badMath []Refused
 	wrote   int
+	// docs is everything published so far, in the order it was written, so that
+	// the views which cut across issues can be built once the walk is done.
+	docs []doc
 }
 
 // Refused is one formula the build could not typeset, and the file it is in.
@@ -56,6 +59,7 @@ type Stats struct {
 	Issues   int
 	Pages    int
 	Articles int
+	Problems int
 	Files    int
 	// BadMath is how many formulas KaTeX refused. They are marked on the page
 	// they are on, so this is the size of a reading defect and not the size of a
@@ -89,6 +93,7 @@ func (s *Site) Build() (Stats, error) {
 	}
 
 	years := map[int][]corpus.IssueKey{}
+	published := map[string]bool{}
 	for _, key := range issues {
 		one, err := s.issue(key)
 		if err != nil {
@@ -98,9 +103,25 @@ func (s *Site) Build() (Stats, error) {
 		stats.Pages += one.Pages
 		stats.Articles += one.Articles
 		years[key.Year] = append(years[key.Year], key)
+		published[key.String()] = true
 	}
 
+	// The problems come after the issues because a problem links to the issue
+	// that posed it and the issue that printed the solution, and it can only
+	// know whether those were published once they have been walked.
+	posed, err := s.problems(published)
+	if err != nil {
+		return stats, err
+	}
+	stats.Problems = posed
+
 	if err := s.years(years); err != nil {
+		return stats, err
+	}
+	if err := s.views(); err != nil {
+		return stats, err
+	}
+	if err := s.searchIndex(); err != nil {
 		return stats, err
 	}
 	if err := s.assets(); err != nil {
@@ -108,6 +129,22 @@ func (s *Site) Build() (Stats, error) {
 	}
 	stats.Files = s.wrote
 	stats.BadMath = len(s.badMath)
+
+	// The links are checked last, over the finished directory, because that is
+	// the only moment the answer is knowable: half a site has dead links in it
+	// by construction.
+	broken, err := CheckLinks(s.Out)
+	if err != nil {
+		return stats, err
+	}
+	if len(broken) > 0 {
+		for _, b := range broken {
+			s.logf("broken link: %s", b)
+		}
+		return stats, fmt.Errorf("%s on the built site %s nowhere, starting with %w",
+			count(len(broken), "reference", "references"), verb(len(broken), "goes", "go"), broken[0])
+	}
+
 	if s.Strict && len(s.badMath) > 0 {
 		return stats, fmt.Errorf("%d formulas could not be typeset", len(s.badMath))
 	}
@@ -271,17 +308,47 @@ func (s *Site) article(key corpus.IssueKey, dir, name string) (indexEntry, error
 	// The file holds the slug the assembler gave it and not the banner the
 	// magazine printed, so the table is read the way round that matches.
 	printed := rubric.BySlug(front.Rubric).Title
+	// Everything in the meta line that names something the site also indexes is
+	// written as a link into that index. An article three levels down reaches
+	// them the same way it reaches the stylesheet.
+	const root = "../../../"
+	var section map[string]string
+	if front.Rubric != "" {
+		section = map[string]string{"Href": root + "rubrics/" + front.Rubric + ".html", "Title": printed}
+	}
+	var tag map[string]string
+	if front.Tag != "" {
+		tag = map[string]string{"Href": root + "tags/" + string(front.Tag) + ".html", "Title": string(front.Tag)}
+	}
+	var by []indexEntry
+	for _, who := range front.Authors {
+		by = append(by, indexEntry{Href: root + "authors/" + rubric.Slug(who) + ".html", Title: who})
+	}
+
+	s.docs = append(s.docs, doc{
+		Kind:    "article",
+		Href:    path.Join(dir, href),
+		Title:   front.Title,
+		Year:    front.Year,
+		Number:  front.Number,
+		Issue:   front.Issue,
+		Authors: front.Authors,
+		Rubric:  front.Rubric,
+		Tag:     string(front.Tag),
+		Pages:   pageRange(front),
+		Text:    plain(body),
+	})
 	return indexEntry{Href: href, Title: front.Title, Note: printed},
 		s.emit(path.Join(dir, href), articleTmpl, map[string]any{
 			"Title":   front.Title,
-			"Authors": strings.Join(front.Authors, ", "),
-			"Rubric":  printed,
+			"Authors": by,
+			"Rubric":  section,
 			"Issue":   fmt.Sprintf("Квант %d, №%s", front.Year, front.Number),
 			"Pages":   pageRange(front),
-			"Tag":     string(front.Tag),
+			"Tag":     tag,
 			"Body":    template.HTML(html), //nolint:gosec // escaped by the renderer, checked by Guard
 			"Up":      "../",
-			"Root":    "../../../",
+			"Root":    root,
 		})
 }
 
@@ -303,6 +370,20 @@ func (s *Site) page(key corpus.IssueKey, dir string, index int) (indexEntry, err
 	if label == "" {
 		label = "не пронумерована"
 	}
+	// A sheet is in the search index and in no other view, because it has no
+	// author and no rubric: those are properties of what the magazine printed
+	// and a sheet is a side of paper, which can carry the end of one article
+	// and the start of the next.
+	s.docs = append(s.docs, doc{
+		Kind:   "sheet",
+		Href:   path.Join(dir, href),
+		Title:  fmt.Sprintf("Квант %d, №%s, лист %d", key.Year, key.Number, index),
+		Year:   key.Year,
+		Number: key.Number,
+		Issue:  key.String(),
+		Pages:  front.PageLabel,
+		Text:   plain(body),
+	})
 	return indexEntry{Href: href, Title: fmt.Sprintf("Лист %d", index), Note: label},
 		s.emit(path.Join(dir, href), pageTmpl, map[string]any{
 			"Title": fmt.Sprintf("Квант %d, №%s, лист %d", key.Year, key.Number, index),
@@ -341,7 +422,7 @@ func (s *Site) years(years map[int][]corpus.IssueKey) error {
 		all = append(all, indexEntry{
 			Href:  path.Join(strconv.Itoa(year), "index.html"),
 			Title: strconv.Itoa(year),
-			Note:  plural(len(keys)),
+			Note:  plural(len(keys), "номер", "номера", "номеров"),
 		})
 	}
 	sort.Slice(all, func(i, j int) bool { return all[i].Title < all[j].Title })
@@ -417,13 +498,16 @@ func pageRange(front corpus.ArticleFront) string {
 	return fmt.Sprintf("%d-%d", front.PageFirst, front.PageLast)
 }
 
-func plural(n int) string {
+// plural counts something in Russian, which needs three forms rather than two:
+// one номер, two номера, five номеров, and then eleven to fourteen go back to
+// номеров whatever their last digit is.
+func plural(n int, one, few, many string) string {
 	switch {
 	case n%10 == 1 && n%100 != 11:
-		return fmt.Sprintf("%d номер", n)
+		return fmt.Sprintf("%d %s", n, one)
 	case n%10 >= 2 && n%10 <= 4 && (n%100 < 12 || n%100 > 14):
-		return fmt.Sprintf("%d номера", n)
+		return fmt.Sprintf("%d %s", n, few)
 	default:
-		return fmt.Sprintf("%d номеров", n)
+		return fmt.Sprintf("%d %s", n, many)
 	}
 }

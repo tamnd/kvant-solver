@@ -40,8 +40,8 @@ func runPublish(args []string) error {
 			return err
 		}
 	}
-	fmt.Printf("wrote %d files: %d issues, %d articles, %d pages\n",
-		stats.Files, stats.Issues, stats.Articles, stats.Pages)
+	fmt.Printf("wrote %d files: %d issues, %d articles, %d pages, %d problems\n",
+		stats.Files, stats.Issues, stats.Articles, stats.Pages, stats.Problems)
 	if stats.BadMath > 0 {
 		fmt.Printf("%d formulas could not be typeset and are marked on the page they are on\n",
 			stats.BadMath)
