@@ -236,8 +236,7 @@ func TestSyncIssueFillsInTheDetail(t *testing.T) {
 		t.Fatal(err)
 	}
 	toc := &manifest.TOC{}
-	rubrics := &manifest.Rubrics{}
-	if err := c.SyncIssue(t.Context(), &iss, toc, rubrics); err != nil {
+	if err := c.SyncIssue(t.Context(), &iss, toc); err != nil {
 		t.Fatal(err)
 	}
 	if iss.Pages != 80 {
@@ -256,12 +255,45 @@ func TestSyncIssueFillsInTheDetail(t *testing.T) {
 	if !ok || len(rows) != 2 {
 		t.Fatalf("toc has %d rows", len(rows))
 	}
-	if rubrics.Count != 0 {
-		t.Error("Observe should not set the count, Sort does")
-	}
-	rubrics.Sort()
+	rubrics := &manifest.Rubrics{}
+	rubrics.From(toc)
 	if rubrics.Count != 2 {
 		t.Errorf("%d rubrics", rubrics.Count)
+	}
+}
+
+func TestRubricsAreCountedOffTheContentsAndNotAddedUp(t *testing.T) {
+	toc := &manifest.TOC{}
+	toc.Set("kvant_1975_1", []manifest.Row{
+		{Rubric: "Смесь", Title: "Один"},
+		{Rubric: "Смесь", Title: "Два"},
+	})
+	rubrics := &manifest.Rubrics{}
+	rubrics.From(toc)
+	// Resyncing a year used to count it again on top of what the file already
+	// said, because the old file was read back in and the rows were observed
+	// onto it a second time. A year read twice is still a year.
+	rubrics.From(toc)
+	if len(rubrics.Rubrics) != 1 {
+		t.Fatalf("%d rubrics after two runs", len(rubrics.Rubrics))
+	}
+	if got := rubrics.Rubrics[0].Count; got != 2 {
+		t.Errorf("two rows counted as %d", got)
+	}
+}
+
+func TestARubricNoContentsMentionsAnyMoreGoesAway(t *testing.T) {
+	toc := &manifest.TOC{}
+	toc.Set("kvant_1975_1", []manifest.Row{{Rubric: "Смесь", Title: "Один"}})
+	rubrics := &manifest.Rubrics{}
+	rubrics.From(toc)
+	// The banner was misread, and the reread fixed it. Counting off the
+	// contents is what lets the wrong one leave: adding to the old file kept
+	// every name any run had ever produced, correction or not.
+	toc.Set("kvant_1975_1", []manifest.Row{{Rubric: "Квант для младших школьников", Title: "Один"}})
+	rubrics.From(toc)
+	if len(rubrics.Rubrics) != 1 {
+		t.Fatalf("%d rubrics, the misread one should be gone: %+v", len(rubrics.Rubrics), rubrics.Rubrics)
 	}
 }
 
@@ -317,7 +349,7 @@ func TestADeepRunWithoutTheMirrorKeepsTheMirrorsPageRanges(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := c.SyncIssue(t.Context(), &iss, toc, nil); err != nil {
+	if err := c.SyncIssue(t.Context(), &iss, toc); err != nil {
 		t.Fatal(err)
 	}
 	rows, _ := toc.Get("kvant_1975_1")
@@ -350,7 +382,7 @@ func TestAnIssueNobodyHasReadBeforeHasNoRangesToKeep(t *testing.T) {
 		t.Fatal(err)
 	}
 	toc := &manifest.TOC{}
-	if err := c.SyncIssue(t.Context(), &iss, toc, nil); err != nil {
+	if err := c.SyncIssue(t.Context(), &iss, toc); err != nil {
 		t.Fatal(err)
 	}
 	rows, ok := toc.Get("kvant_1975_1")
