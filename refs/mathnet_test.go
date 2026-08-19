@@ -296,3 +296,32 @@ func TestAGoodConcordancePasses(t *testing.T) {
 		t.Errorf("counts %v", counts)
 	}
 }
+
+// A sweep of the site loses issues to timeouts and is meant to be rerun, so the
+// file has to say which ones it is short of. The distinction being tested is
+// between an issue the server never answered for and one that answered with an
+// empty listing: only the first is worth going back for, and counting rows
+// rather than asking whether the answer arrived cannot tell them apart.
+func TestAnIssueThatNeverAnsweredIsNamedAndAnEmptyOneIsNot(t *testing.T) {
+	c := mathnetCorpus(t)
+	idx, err := refs.LoadMathNet(c, "ru")
+	if err != nil {
+		t.Fatal(err)
+	}
+	listed := []mathnetru.IssueRef{
+		{Year: 2008, Number: "3", Query: 3},
+		{Year: 2008, Number: "4", Query: 4},
+		{Year: 2008, Number: "5", Query: 5},
+	}
+	m := refs.BuildMathNet(listed, map[string][]mathnetru.PaperRef{
+		"kvant_2008_3": {paper("kvant2822", "Из истории газовых центрифуг", 2, 5)},
+		"kvant_2008_4": {},
+	}, idx)
+
+	if len(m.Missing) != 1 || m.Missing[0] != "kvant_2008_5" {
+		t.Errorf("missing %v, want only the issue that never answered", m.Missing)
+	}
+	if m.Issues != 2 {
+		t.Errorf("held the articles of %d issues, want 2", m.Issues)
+	}
+}

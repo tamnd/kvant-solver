@@ -67,6 +67,18 @@ type MathNet struct {
 	Count  int `yaml:"count"`
 	Linked int `yaml:"linked"`
 
+	// Issues is how many of the issues mathnet lists this file holds the
+	// articles of, and Missing names the ones it does not.
+	//
+	// A sweep of the site loses issues to timeouts and is meant to be run again
+	// to pick them up, so a file with holes in it is the normal state of this
+	// rather than a broken one. Without these two the holes are invisible: the
+	// file reads as the complete listing whatever fraction of it arrived, and
+	// the only way to find out otherwise is to count the rows per issue by hand
+	// and know how many there should have been.
+	Issues  int      `yaml:"issues"`
+	Missing []string `yaml:"missing,omitempty"`
+
 	Papers []MathNetPaper `yaml:"papers"`
 }
 
@@ -243,6 +255,17 @@ func BuildMathNet(issues []mathnetru.IssueRef, papers map[string][]mathnetru.Pap
 	out := &MathNet{Source: mathnetru.ContentsURL()}
 	for _, issue := range issues {
 		key := fmt.Sprintf("kvant_%d_%s", issue.Year, issue.Number)
+		// Keyed on whether the map has the issue at all rather than on the
+		// number of rows, because the two mean different things. A fetch that
+		// failed never puts the key there, and an issue mathnet lists but
+		// indexes nothing for puts it there empty. Counting on length would
+		// file the second as missing and send every later run back to a page
+		// that has already given its answer.
+		if _, ok := papers[key]; !ok {
+			out.Missing = append(out.Missing, key)
+			continue
+		}
+		out.Issues++
 		found := idx.match(key, papers[key])
 		for _, paper := range papers[key] {
 			row := MathNetPaper{
@@ -376,7 +399,9 @@ func ReadMathNet(store *manifest.Store) (*MathNet, error) {
 // SaveMathNet writes manifests/refs/mathnet.yaml.
 func SaveMathNet(store *manifest.Store, m *MathNet) error {
 	return store.Write(MathNetFile, m,
-		"Every Kvant article mathnet.ru holds, against our tag for the same article.",
+		"What mathnet.ru holds for Kvant, against our tag for the same article.",
 		"Built by kvant refs mathnet. Bibliography and permanent links only.",
+		"Covers the issues counted in issues below. Anything named in missing is an issue the",
+		"server would not answer for, and running the command again picks those up and nothing else.",
 		"Mathnet indexes no references for Kvant, so this is a concordance and not a citation graph.")
 }
