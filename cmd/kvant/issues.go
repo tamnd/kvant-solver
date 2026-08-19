@@ -83,6 +83,14 @@ func runIssuesSync(args []string) error {
 	if err != nil {
 		return err
 	}
+	// What a deep run learned about an issue is not in the index, so a run that
+	// did not visit an issue has nothing to say about its page count or its row
+	// counts and must not overwrite them with the nothing it has. Reading the
+	// old file and merging this run's answers onto it keeps the years this run
+	// skipped, which is what makes resyncing one year a safe thing to do.
+	if err := carryDeep(store, issues); err != nil {
+		return err
+	}
 	fmt.Printf("index: %d issues over %d years\n", issues.Count, issues.Years)
 
 	if *deep {
@@ -110,6 +118,38 @@ func runIssuesSync(args []string) error {
 		return finish(toc, rubrics)
 	}
 	return finish(nil, nil)
+}
+
+// carryDeep folds this run's index answers onto the issues already on disk.
+//
+// The old file is the base and the fresh one is the overlay, because merge only
+// takes a field it has something to put in it. So a URL the index just read
+// wins, and a page count only a deep run could know survives a run that was not
+// deep or was limited to another year.
+func carryDeep(store *manifest.Store, fresh *manifest.Issues) error {
+	old := &manifest.Issues{}
+	switch err := store.Read(manifest.IssuesFile, old); {
+	case errors.Is(err, manifest.ErrMissing):
+		return nil
+	case err != nil:
+		return err
+	}
+	for _, iss := range fresh.Issues {
+		old.Add(iss)
+	}
+	// An issue the index no longer lists is dropped rather than carried. The
+	// index is the list of what exists, and keeping a row it stopped naming
+	// would make the manifest a record of everything the site has ever said.
+	kept := old.Issues[:0]
+	for _, iss := range old.Issues {
+		if _, ok := fresh.Get(iss.Key); ok {
+			kept = append(kept, iss)
+		}
+	}
+	old.Issues = kept
+	old.Sort()
+	*fresh = *old
+	return nil
 }
 
 // lookedAt says whether this run examined the thing an old erratum is about,
