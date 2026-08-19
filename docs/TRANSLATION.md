@@ -123,8 +123,33 @@ Reads the whole tree and reports what is stale and why, and what has never been 
 
 With `--write` the audit also lands in `reports/translation-audit.md`.
 
-## What is not done
+## The Quantum mapping
 
-`manifests/quantum-map.yaml`, the 1990 to 2001 article mapping, needs the *Quantum* tables of contents and has not been built.
+```
+kvant quantum sync
+```
+
+`manifests/quantum-map.yaml` is the whole run of the English magazine, 908 articles over 1990 to 2001, with the Kvant article each one came out of named where that could be worked out.
+The English side is the cumulative index NSTA still hosts.
+The Russian side is `manifests/toc.yaml`, which already covers those years, so the mapping needs no page to have been read and no model to be called.
+
+The join is the byline, because nothing else survives the crossing.
+A translated title was rewritten rather than translated, and «Обобщённая сумма углов многогранника» came out as *Adding Angles in Three Dimensions*.
+The date is no help either: *Quantum* drew on the whole back catalogue and printed that one eighteen years after Kvant did.
+
+So the surnames are transliterated onto a skeleton that absorbs the difference between one scheme and the next, since Соловьёв is Solovyov, Solovyev, Soloviev or Solovev depending on who was typing.
+Initials get their own table, because an initial is a letter somebody chose rather than a shortened word: Юрий is Yuri and Яков is Yakov, so Ю and Я begin with a Y in English and with nothing like one under any mechanical scheme.
+A row is claimed only when exactly one Kvant article, printed no later than the English one, is by exactly those people.
+
+That yields 103 rows.
+Another 391 articles have a Kvant author on the byline and no single article to point at, which is almost always one prolific author: Гик wrote three hundred pieces and the index says nothing about which of them this is.
+The remaining 414 have no earlier Kvant article by anybody of that name, which is what *Quantum* commissioned in English.
+
+Those numbers are the honest shape of the thing, and so is this: the mapping is derived from bylines and it has not been read.
+Spot checking finds rows that are plainly right, and it finds a few that are not, where an author wrote two things and the wrong one won.
+Every row carries the Russian title next to the English one for exactly that reason, so a wrong one can be seen without opening anything, and `match` says whether the two bylines agreed in full or the English credited only some of them.
+Nothing should lean on a single row until a reader has looked at it.
+
+## What is not done
 
 The sampled register audit and the full year into each language need the fleet, which is saturated with the OCR of the Soviet decades. The machinery is here and tested; no year has been run through it yet.
