@@ -148,7 +148,12 @@ func runRefsMathNet(args []string) error {
 		if n > 0 {
 			time.Sleep(*pause)
 		}
-		got, err := client.Issue(ctx, issue.Year, issue.Query)
+		var got []mathnetru.PaperRef
+		err := client.Fetcher.Retry(ctx, func() error {
+			var err error
+			got, err = client.Issue(ctx, issue.Year, issue.Query)
+			return err
+		})
 		if err != nil {
 			return fmt.Errorf("%d issue %s: %w", issue.Year, issue.Number, err)
 		}

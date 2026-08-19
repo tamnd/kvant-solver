@@ -3,6 +3,7 @@ package source
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -105,6 +106,92 @@ func TestOtherStatusesCarryTheCode(t *testing.T) {
 	}
 	if se.Status != 500 {
 		t.Errorf("status is %d", se.Status)
+	}
+}
+
+// A sweep is hundreds of requests and one of them times out. That is the whole
+// reason Retry exists, so the first thing to pin down is that the run survives
+// it.
+func TestATimeoutIsTriedAgain(t *testing.T) {
+	tries := 0
+	err := testClient(0).Retry(t.Context(), func() error {
+		tries++
+		if tries < 3 {
+			return errors.New("dial tcp: i/o timeout")
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tries != 3 {
+		t.Errorf("gave up after %d tries", tries)
+	}
+}
+
+// Retrying through a 429 or a 403 is how a crawler gets a subnet blocked, so
+// both have to come straight back out. A 404 is an answer and asking again does
+// not change it.
+func TestRetryDoesNotArgueWithARefusal(t *testing.T) {
+	for _, want := range []error{ErrRateLimited, ErrForbidden, ErrNotFound, ErrDisallowed} {
+		tries := 0
+		err := testClient(0).Retry(t.Context(), func() error {
+			tries++
+			return fmt.Errorf("http://example.invalid: %w", want)
+		})
+		if !errors.Is(err, want) {
+			t.Errorf("%v came back as %v", want, err)
+		}
+		if tries != 1 {
+			t.Errorf("%v was asked %d times", want, tries)
+		}
+	}
+}
+
+// A 4xx means the server understood and said no. A 5xx means it did not manage
+// to answer at all, which is the case worth asking about again.
+func TestRetryTellsAServerErrorFromABadRequest(t *testing.T) {
+	for _, tc := range []struct{ status, want int }{{400, 1}, {418, 1}, {500, Tries}, {503, Tries}} {
+		tries := 0
+		err := testClient(0).Retry(t.Context(), func() error {
+			tries++
+			return &StatusError{URL: "http://example.invalid", Status: tc.status}
+		})
+		if err == nil {
+			t.Errorf("http %d was allowed to pass", tc.status)
+		}
+		if tries != tc.want {
+			t.Errorf("http %d was asked %d times, want %d", tc.status, tries, tc.want)
+		}
+	}
+}
+
+func TestRetryGivesUpAndSaysWhatTheLastFailureWas(t *testing.T) {
+	sentinel := errors.New("the wire came loose")
+	err := testClient(0).Retry(t.Context(), func() error { return sentinel })
+	if !errors.Is(err, sentinel) {
+		t.Fatalf("the last failure was lost: %v", err)
+	}
+	if !strings.Contains(err.Error(), "gave up") {
+		t.Errorf("the error does not say it gave up: %v", err)
+	}
+}
+
+// A cancelled run stops now. Sitting out the backoff of a context that is
+// already done is the slowest possible way to do nothing.
+func TestRetryStopsWhenTheRunIsCancelled(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	tries := 0
+	err := testClient(time.Hour).Retry(ctx, func() error {
+		tries++
+		cancel()
+		return errors.New("dial tcp: i/o timeout")
+	})
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("cancelling gave %v", err)
+	}
+	if tries != 1 {
+		t.Errorf("kept going for %d tries after cancellation", tries)
 	}
 }
 
