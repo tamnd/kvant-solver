@@ -16,7 +16,7 @@ import (
 // on a printed page number produces them. The thumbnail strip on the issue page
 // names every one of them, which is why this is one request per issue rather
 // than a sweep of forty.
-func (c *Catalog) SyncIssue(ctx context.Context, iss *manifest.Issue, toc *manifest.TOC, rubrics *manifest.Rubrics) error {
+func (c *Catalog) SyncIssue(ctx context.Context, iss *manifest.Issue, toc *manifest.TOC) error {
 	page, err := c.Digital.Issue(ctx, iss.Year, iss.Number)
 	if err != nil {
 		return fmt.Errorf("%s: %s: %w", SourceDigital, iss.Key, err)
@@ -42,9 +42,6 @@ func (c *Catalog) SyncIssue(ctx context.Context, iss *manifest.Issue, toc *manif
 			HasText:   r.HasText,
 			Source:    SourceDigital,
 		})
-		if rubrics != nil {
-			rubrics.Observe(r.Rubric, iss.Year)
-		}
 	}
 	if toc != nil {
 		carryPages(toc, iss.Key, rows)

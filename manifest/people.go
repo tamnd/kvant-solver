@@ -107,8 +107,30 @@ type Variant struct {
 	Last  int    `yaml:"last_year,omitempty"`
 }
 
-// Observe records one sighting of a rubric banner in a given year.
-func (r *Rubrics) Observe(name string, year int) {
+// From counts the rubrics afresh off the contents.
+//
+// A rubric is a summary of what the contents rows say and not a record of its
+// own, so it is counted from them rather than added to as issues are read. The
+// two go apart in three ways otherwise, and all three had happened by the time
+// this was written. Resyncing a year counted it twice, because the old file was
+// read back in and the year's rows were then observed onto it a second time.
+// Nothing ever reconsidered Known or Group, so a section added to the taxonomy
+// never reached a file already written. And an entry is matched on its slug, so
+// changing how a slug is spelled did not update the old entries, it appended a
+// second set beside them and left the file holding both.
+func (r *Rubrics) From(toc *TOC) {
+	r.Rubrics = nil
+	for _, block := range toc.Issues {
+		year := KeyYear(block.Key)
+		for _, row := range block.Rows {
+			r.observe(row.Rubric, year)
+		}
+	}
+	r.Sort()
+}
+
+// observe records one sighting of a rubric banner in a given year.
+func (r *Rubrics) observe(name string, year int) {
 	name = strings.TrimSpace(name)
 	if name == "" {
 		return

@@ -76,6 +76,11 @@ func runIssuesSync(args []string) error {
 	var issues *manifest.Issues
 	finish := func(toc *manifest.TOC, rubrics *manifest.Rubrics) error {
 		errata.Carry(old, lookedAt(reached(errata), *deep && *mirror, *f.years))
+		// Counted here rather than as the issues are read, so that the rubrics
+		// always say exactly what the contents on disk say. See Rubrics.From.
+		if toc != nil && rubrics != nil {
+			rubrics.From(toc)
+		}
 		return writeAll(store, issues, toc, rubrics, errata)
 	}
 
@@ -98,11 +103,11 @@ func runIssuesSync(args []string) error {
 		if err := store.Read(manifest.TOCFile, toc); err != nil && !errors.Is(err, manifest.ErrMissing) {
 			return err
 		}
+		// The old rubrics are deliberately not read back in. They are counted
+		// off the contents at the end of the run, so anything the file says now
+		// is about to be replaced by what toc.yaml says.
 		rubrics := &manifest.Rubrics{}
-		if err := store.Read(manifest.RubricsFile, rubrics); err != nil && !errors.Is(err, manifest.ErrMissing) {
-			return err
-		}
-		if err := deepSync(ctx, c, issues, toc, rubrics, errata, *f.years, *mirror); err != nil {
+		if err := deepSync(ctx, c, issues, toc, errata, *f.years, *mirror); err != nil {
 			// A run that dies half way through has still learned something, so
 			// what it learned is written before the error goes up. The error
 			// that stopped the run is the one worth reporting, so a failure to
@@ -113,9 +118,11 @@ func runIssuesSync(args []string) error {
 			return err
 		}
 		toc.Sort()
-		rubrics.Sort()
+		if err := finish(toc, rubrics); err != nil {
+			return err
+		}
 		fmt.Printf("contents: %d rows, %d rubrics\n", toc.Rows(), rubrics.Count)
-		return finish(toc, rubrics)
+		return nil
 	}
 	return finish(nil, nil)
 }
@@ -209,14 +216,14 @@ func reached(errata *manifest.Errata) map[string]bool {
 // fetcher would serialise it anyway, and going issue by issue means a run that
 // is interrupted leaves a manifest that is short rather than one that is full
 // of holes.
-func deepSync(ctx context.Context, c *catalog.Catalog, issues *manifest.Issues, toc *manifest.TOC, rubrics *manifest.Rubrics, errata *manifest.Errata, years []int, mirror bool) error {
+func deepSync(ctx context.Context, c *catalog.Catalog, issues *manifest.Issues, toc *manifest.TOC, errata *manifest.Errata, years []int, mirror bool) error {
 	done := 0
 	for i := range issues.Issues {
 		iss := &issues.Issues[i]
 		if len(years) > 0 && !slices.Contains(years, iss.Year) {
 			continue
 		}
-		if err := c.SyncIssue(ctx, iss, toc, rubrics); err != nil {
+		if err := c.SyncIssue(ctx, iss, toc); err != nil {
 			return err
 		}
 		if mirror {

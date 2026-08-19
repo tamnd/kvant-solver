@@ -296,10 +296,10 @@ func TestPersonaliaKeepsVariants(t *testing.T) {
 
 func TestRubricsFoldSpellingVariants(t *testing.T) {
 	r := &Rubrics{}
-	r.Observe("Задачник «Кванта»", 1975)
-	r.Observe("Задачник «Кванта»", 1976)
-	r.Observe("задачник Кванта", 1988)
-	r.Observe("Квант для младших школьников", 1975)
+	r.observe("Задачник «Кванта»", 1975)
+	r.observe("Задачник «Кванта»", 1976)
+	r.observe("задачник Кванта", 1988)
+	r.observe("Квант для младших школьников", 1975)
 	r.Sort()
 
 	if len(r.Rubrics) != 2 {
@@ -330,8 +330,8 @@ func TestRubricSlugFoldsYo(t *testing.T) {
 	// there are the same section, and the folding lives in the rubric package
 	// now so that a slug means the same thing in a manifest and in an article.
 	r := &Rubrics{}
-	r.Observe("Всё о шаре", 1991)
-	r.Observe("Все о шаре", 1992)
+	r.observe("Всё о шаре", 1991)
+	r.observe("Все о шаре", 1992)
 	if len(r.Rubrics) != 1 {
 		t.Errorf("ё and е came out as %d rubrics", len(r.Rubrics))
 	}
