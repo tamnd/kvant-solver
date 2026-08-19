@@ -135,16 +135,79 @@ func runTranslate(args []string) error {
 	fmt.Print(report.Report())
 
 	if *audit && *write {
-		path := filepath.Join(c.Root, "reports", "translation-audit.md")
-		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-			return err
-		}
-		if err := os.WriteFile(path, []byte(report.Report()), 0o644); err != nil {
-			return err
-		}
-		fmt.Printf("wrote %s\n", path)
+		return writeAuditReport(c, sources, *from, scopeOf(*year, *issue), g)
 	}
 	return nil
+}
+
+// writeAuditReport writes reports/translation-audit.md, covering every language
+// this corpus translates into rather than the one the command was asked for.
+//
+// The report is one file with one name, so writing it from the run's own audit
+// meant each language overwrote the last. Every language is walked here instead,
+// which costs nothing but file reads, and the run's --lang only decides which
+// section a reader is most likely to be looking for.
+func writeAuditReport(c *corpus.Corpus, sources []string, from, scope string,
+	g *glossary.Glossary) error {
+	audits := make([]*translate.Audit, 0, len(glossary.Languages))
+	for _, lang := range glossary.Languages {
+		a, err := auditLang(c, sources, from, lang, g)
+		if err != nil {
+			return err
+		}
+		audits = append(audits, a)
+	}
+	path := filepath.Join(c.Root, "reports", "translation-audit.md")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	if err := os.WriteFile(path, []byte(translate.Combined(scope, audits)), 0o644); err != nil {
+		return err
+	}
+	fmt.Printf("wrote %s\n", path)
+	return nil
+}
+
+// scopeOf says in words what the run was restricted to, so that a report over
+// one year is not read as a report over the archive.
+func scopeOf(year int, issue string) string {
+	switch {
+	case issue != "":
+		return issue
+	case year > 0:
+		return fmt.Sprintf("%d", year)
+	default:
+		return "the whole corpus"
+	}
+}
+
+// auditLang is the staleness pass for one language, over the same source files
+// the run itself walked. It makes no model call and writes nothing.
+func auditLang(c *corpus.Corpus, sources []string, from, lang string,
+	g *glossary.Glossary) (*translate.Audit, error) {
+	a := &translate.Audit{Lang: lang}
+	for _, src := range sources {
+		rel, err := filepath.Rel(c.Root, src)
+		if err != nil {
+			return nil, err
+		}
+		key := filepath.ToSlash(rel)
+		front, ok := frontFor(key)
+		if !ok {
+			continue
+		}
+		// A source that will not parse is skipped rather than counted missing.
+		// It is a fault in the Russian, and reporting it as an untranslated
+		// English file would send somebody to fix the wrong tree.
+		body, err := corpus.LoadUnchecked(src, front)
+		if err != nil {
+			continue
+		}
+		target := targetPath(c, key, from, lang)
+		a.Add(strings.TrimPrefix(target, c.Root+string(filepath.Separator)),
+			stateOf(target, front, body, g, lang))
+	}
+	return a, nil
 }
 
 // stateOf reads the file already sitting at the target path and decides whether
