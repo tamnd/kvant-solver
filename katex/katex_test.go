@@ -203,3 +203,31 @@ func TestTheFontsTheStylesheetNeedsAreThere(t *testing.T) {
 		}
 	}
 }
+
+// The shorthands the model writes for things the magazine printed plainly.
+// Defining them is right for the same reason the Russian function names are:
+// the alternative is rereading pages to get a different spelling of the same
+// character.
+func TestTheShorthandsTheCorpusActuallyUsesRender(t *testing.T) {
+	r, err := New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tex := range []string{`\eps\gt0`, `-10\celsius`} {
+		if _, err := r.Render(tex, false); err != nil {
+			t.Errorf("%s: %v", tex, err)
+		}
+	}
+}
+
+// A control sequence nobody defined is still an error. The macro list is for
+// notation the magazine used, not a way of making every refusal go away.
+func TestAnUndefinedControlSequenceIsStillRefused(t *testing.T) {
+	r, err := New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.Render(`\colsep`, false); err == nil {
+		t.Error("a control sequence that means nothing rendered")
+	}
+}

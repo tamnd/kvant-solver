@@ -132,6 +132,19 @@ func (r *Renderer) Render(tex string, display bool) (string, error) {
 	for _, name := range []string{"tg", "ctg", "arctg", "arcctg", "sh", "ch", "th", "cth", "arcsh", "arcch", "arcth"} {
 		set(macros, `\`+name, `\mathrm{`+name+`}`)
 	}
+	// And these are the shorthands the model writes for things the magazine
+	// printed plainly. Building the whole site turned up 56 spans KaTeX would
+	// not take and 51 of them are these two: an epsilon written the way half of
+	// mathematics writes it, and a temperature. Neither is a misreading, so
+	// defining them is right for the same reason the function names are, and
+	// rereading six pages to get a different spelling of the same character
+	// would be a waste of the reading lane.
+	for name, expansion := range map[string]string{
+		`\eps`:     `\varepsilon`,
+		`\celsius`: `{}^\circ\mathrm{C}`,
+	} {
+		set(macros, name, expansion)
+	}
 	set(opts, "macros", macros)
 	set(opts, "strict", false)
 	if setErr != nil {

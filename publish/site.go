@@ -34,8 +34,20 @@ type Site struct {
 	Strict bool
 
 	render  *Renderer
-	badMath int
+	badMath []Refused
 	wrote   int
+}
+
+// Refused is one formula the build could not typeset, and the file it is in.
+//
+// The site build is the only thing in the project that parses every formula in
+// the corpus, so it is the only thing that knows this. Rule 7 refuses a page
+// whose math spans do not parse at reading time; these are the ones that got
+// past it and are still not TeX, which is a different list and a shorter one.
+type Refused struct {
+	// Where is the corpus file, as a reader of the report would look for it.
+	Where string
+	BadMath
 }
 
 // Stats is what a build did, which is what the command prints and what a test
@@ -95,9 +107,9 @@ func (s *Site) Build() (Stats, error) {
 		return stats, err
 	}
 	stats.Files = s.wrote
-	stats.BadMath = s.badMath
-	if s.Strict && s.badMath > 0 {
-		return stats, fmt.Errorf("%d formulas could not be typeset", s.badMath)
+	stats.BadMath = len(s.badMath)
+	if s.Strict && len(s.badMath) > 0 {
+		return stats, fmt.Errorf("%d formulas could not be typeset", len(s.badMath))
 	}
 	return stats, nil
 }
@@ -110,9 +122,16 @@ func (s *Site) Build() (Stats, error) {
 func (s *Site) noteBadMath(where string, bad []BadMath) {
 	for _, b := range bad {
 		s.logf("%s: %s", where, b)
+		s.badMath = append(s.badMath, Refused{Where: where, BadMath: b})
 	}
-	s.badMath += len(bad)
 }
+
+// Refused lists the formulas the last build could not typeset.
+//
+// They are worth writing down rather than counting, because every one of them
+// is a page that can be read again: the file, the line and the TeX the model
+// produced are what somebody fixing it needs.
+func (s *Site) Refused() []Refused { return s.badMath }
 
 func (s *Site) logf(format string, args ...any) {
 	if s.Logf != nil {
@@ -277,7 +296,7 @@ func (s *Site) page(key corpus.IssueKey, dir string, index int) (indexEntry, err
 	if err != nil {
 		return indexEntry{}, fmt.Errorf("%s: %w", id, err)
 	}
-	s.noteBadMath(id.String(), bad)
+	s.noteBadMath(path.Join(dir, "pages", id.Filename()), bad)
 
 	href := path.Join("pages", fmt.Sprintf("%04d.html", index))
 	label := front.PageLabel
