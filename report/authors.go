@@ -17,8 +17,7 @@ import (
 // Each one is a different failure of the read and wants a different fix, which
 // is why they are counted apart. A page whose byline came back as noise was
 // misread; a byline that is initials and no surname was read correctly off a
-// page that does not carry the surname, and the surname has to come from the
-// printed contents instead.
+// page that does not carry the surname, and there is nowhere else to get one.
 const (
 	// NotAName is a byline with no Russian letter in it at all. These are
 	// decoder noise: abc, e, xnyxzk.
@@ -30,8 +29,9 @@ const (
 	LatinTail = "latin-tail"
 
 	// NoSurname is initials and nothing else. The magazine does sign some
-	// pieces that way, so this is not necessarily a misread, but it is not a
-	// byline anybody can look up either.
+	// pieces that way, so this is not a misread, but it is not a byline anybody
+	// can look up either. The printed contents were checked against all of
+	// these and print the same bare initials, so there is nothing to recover.
 	NoSurname = "no-surname"
 
 	// LooksMisread is a surname seen once or twice that is one letter from a
@@ -297,8 +297,10 @@ func AuthorMarkdown(bylines []Byline, counts AuthorCounts, now time.Time) string
 				"The tail can be cut without reading the page again, but the page is still worth " +
 				"opening, because whatever leaked here leaked from somewhere."},
 		{NoSurname, "Initials and no surname",
-			"Not necessarily a misread, since the magazine signs some pieces this way. " +
-				"The surname, where there is one, has to come from `manifests/toc.yaml` rather than from the page."},
+			"Not a misread. The magazine signs some pieces this way and the page has no surname on it to find. " +
+				"`manifests/toc.yaml` is not the way out either: it was checked against every one of these and " +
+				"it prints the same bare initials in almost all of them, so there is nothing there to recover. " +
+				"Leave them as they are unless somebody identifies the writer from outside the magazine."},
 		{LooksMisread, "One letter from a much commoner name",
 			"A suggestion and not a finding. Nothing here should be changed without opening the page first."},
 	} {
