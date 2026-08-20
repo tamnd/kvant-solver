@@ -174,6 +174,59 @@ func TestABrokenFormulaFails(t *testing.T) {
 	t.Fatalf("findings are %v, want one about the formula", report.Findings)
 }
 
+// Checking the pages only covers the articles the vision lane wrote. The native
+// lane and the publisher path each build a body from their own source, so their
+// mathematics is in no page file, and five blocks KaTeX refuses sat in the
+// corpus through every audit because nothing ever rendered them.
+func TestABrokenFormulaInAnArticleFails(t *testing.T) {
+	in := clean(t)
+	in.Articles[0].Body = "Текст статьи с формулой $\\frac{1}{$ и продолжением."
+	in.LaTeX = checker{}
+	report := audit.Issue(in)
+	for _, finding := range report.Findings {
+		if finding.Rule == "latex" {
+			return
+		}
+	}
+	t.Fatalf("findings are %v, want one about the formula in the article", report.Findings)
+}
+
+// A span that opens and never closes swallows the rest of the article, so the
+// article is asked the same question the pages are.
+func TestAnUnclosedMathSpanInAnArticleFails(t *testing.T) {
+	in := clean(t)
+	in.Articles[0].Body = "Текст статьи.\n\n$$\nx^2 + 1\n"
+	in.LaTeX = checker{}
+	report := audit.Issue(in)
+	for _, finding := range report.Findings {
+		if finding.Rule == "unclosed_math" {
+			return
+		}
+	}
+	t.Fatalf("findings are %v, want one about the span that never closes", report.Findings)
+}
+
+// The report is one finding per line and every rule wrote one until the math
+// rules were asked of the articles, where what gets quoted is a whole display
+// block with the newlines it had in the file. A finding spread over four lines
+// does not line up with the ones around it and cannot be grepped for.
+func TestALatexFindingStaysOnOneLine(t *testing.T) {
+	in := clean(t)
+	in.Articles[0].Body = "Текст статьи.\n\n$$\n\\def\\a{1}\n\\сломано{\n$$\n"
+	in.LaTeX = checker{}
+	report := audit.Issue(in)
+	for _, finding := range report.Findings {
+		if finding.Rule != "latex" {
+			continue
+		}
+		if strings.ContainsAny(finding.Detail, "\n\r") {
+			t.Fatalf("the finding runs over more than one line: %q", finding.Detail)
+		}
+		return
+	}
+	t.Fatalf("findings are %v, want one about the formula in the article", report.Findings)
+}
+
 // An article claiming a page that was never read is a broken link in the corpus.
 func TestAnArticleCannotClaimAPageThatIsNotThere(t *testing.T) {
 	in := clean(t)

@@ -345,7 +345,7 @@ func formulas(report *Report, where, body string, checker ocr.TeXChecker) {
 	for _, span := range spans {
 		if err := checker.Check(span.Text, span.Display); err != nil {
 			report.add(Fail, "latex", where,
-				fmt.Sprintf("line %d: %s: %v", span.Line, clip(span.Text), err))
+				fmt.Sprintf("line %d: %s: %s", span.Line, clip(span.Text), oneLine(err.Error())))
 		}
 	}
 }
@@ -367,6 +367,29 @@ func articles(report *Report, in Input) {
 		}
 		if strings.TrimSpace(article.Body) == "" {
 			report.add(Fail, "empty_article", where, "the article has no body")
+		}
+		// The same two math rules the pages get, asked again of the article.
+		//
+		// Checking the pages looked like enough, on the reading that an article
+		// is a view of them and so holds no formula they do not. That reading
+		// only covers the articles the vision lane wrote. The native lane and
+		// the publisher path each produce a body from their own source, and 723
+		// articles in the corpus come from one of those two, so their
+		// mathematics was in no page file and nothing ever rendered it. Five
+		// blocks that KaTeX refuses sat in the corpus through every audit,
+		// under a flag whose help says every formula goes through KaTeX.
+		//
+		// The site publishes the articles, so an article that does not compile
+		// is a page a reader gets nothing on, whichever lane wrote it. Where a
+		// vision article really does repeat its page, the same formula is
+		// reported against both files, and that is two true statements about
+		// two files rather than a duplicate.
+		if _, unclosed := mathtex.Split(article.Body); unclosed != nil {
+			report.add(Fail, "unclosed_math", where,
+				fmt.Sprintf("a math span opened on line %d is never closed", unclosed.Line))
+		}
+		if in.LaTeX != nil {
+			formulas(report, where, article.Body, in.LaTeX)
 		}
 		first, last := article.Front.PageFirst, article.Front.PageLast
 		if first <= 0 || last < first {
@@ -486,9 +509,23 @@ func runs(numbers []int) string {
 }
 
 func clip(text string) string {
+	text = oneLine(text)
 	runes := []rune(text)
 	if len(runes) <= 50 {
 		return text
 	}
 	return string(runes[:50]) + "…"
+}
+
+// oneLine folds runs of whitespace into single spaces.
+//
+// The report is one finding per line, and every rule wrote one until the math
+// rules were asked of the articles. What they quote is a whole math span, which
+// carries the newlines it had in the file, and KaTeX writes its own diagnostic
+// over two lines so it can underline the offending token on the second. A
+// finding that runs over four lines does not line up with the ones around it
+// and cannot be grepped for, so the excerpt is a fragment of what was written
+// rather than of how it was laid out.
+func oneLine(text string) string {
+	return strings.Join(strings.Fields(text), " ")
 }
