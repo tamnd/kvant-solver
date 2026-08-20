@@ -39,9 +39,26 @@ type laneFlags struct {
 // served, and naming it here is how the corpus records it.
 const FleetModel = "gpt-5"
 
-// FleetTool is where chatgpt-tool lives on server2 and server3. It is under
-// /home/tam on server1, which is what --tool is for.
+// FleetTool is where chatgpt-tool lives on server2 and server3. server1 keeps
+// it under /home/tam, which is what the host=path form of --host is for.
 const FleetTool = "/root/chatgpt-tool/.venv/bin/chatgpt-tool"
+
+// splitHost reads one --host value, which is either an ssh name or an ssh name
+// and the path to chatgpt-tool on that box.
+//
+// --tool is one flag for the whole run, so a pool could only ever hold boxes
+// that agreed on where the tool lived. Ours do not: two keep it under /root and
+// the third under /home/tam. That left the odd one out of every pool, and since
+// it was never in a pool nothing ever reported why, so it sat idle through forty
+// rounds of the other two being capped. --tool still sets the default for hosts
+// that do not say.
+func splitHost(spec, fallback string) (name, tool string) {
+	name, tool, ok := strings.Cut(spec, "=")
+	if !ok || tool == "" {
+		return name, fallback
+	}
+	return name, tool
+}
 
 // addLaneFlags puts the engine flags on a command. The defaults name the card,
 // because that is the lane a decade is read with; repair overrides them.
@@ -63,7 +80,7 @@ func addLaneFlags(fs *pflag.FlagSet, kind string) laneFlags {
 		// The hosts are ssh names out of the user's own config and not addresses,
 		// because which user and which key reaches which box is that file's
 		// business and not this repo's.
-		hosts:   fs.StringSlice("host", nil, "an ssh name of a box the fleet engine reads on, repeatable"),
+		hosts:   fs.StringSlice("host", nil, "an ssh name of a box the fleet engine reads on, or name=path to chatgpt-tool on it, repeatable"),
 		tool:    fs.String("tool", envOr("KVANT_TOOL", FleetTool), "where chatgpt-tool lives on those boxes"),
 		display: fs.String("display", ocr.DefaultDisplay, "the X display Chrome opens on there"),
 		timeout: fs.Duration("timeout", ocr.DefaultPageTimeout, "how long one page may take"),
@@ -159,9 +176,10 @@ func (f laneFlags) build() (lane, error) {
 		}
 		lanes := make([]ocr.Engine, 0, len(*f.hosts))
 		for _, host := range *f.hosts {
+			hostName, tool := splitHost(host, *f.tool)
 			lanes = append(lanes, &ocr.Remote{
 				Host: ocr.Host{
-					Name: host, Tool: *f.tool, Display: *f.display,
+					Name: hostName, Tool: tool, Display: *f.display,
 				},
 				Shell: shell, Copy: copier,
 				Prompt: built.Prompt, Model: name, Timeout: *f.timeout,
