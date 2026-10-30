@@ -6,6 +6,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 )
@@ -47,9 +48,24 @@ func (b Broken) Error() string {
 // are a megabyte nobody would ever fetch. So the stylesheet points at files
 // that are deliberately not there, and reporting that as a broken link would be
 // reporting a decision as a defect.
+//
+// The page for a missing address is the other: it is served at whatever
+// address was asked for, so its links are absolute from where the site is
+// served and there is nothing relative to check them against.
 var notOurs = map[string]bool{
 	"assets/katex.min.css": true,
+	"404.html":             true,
 }
+
+// offSite is the short list of places outside the site a page may point at:
+// the repositories the site is built from.
+var offSite = []string{"https://github.com/tamnd/"}
+
+// meta is the elements that name an address for search engines rather than
+// for readers. The canonical address and the same page in other languages are
+// absolute on purpose, to the one copy of the site that is the real one, and
+// they are not links a reader follows.
+var meta = regexp.MustCompile(`<link rel="(?:canonical|alternate)"[^>]*>`)
 
 // CheckLinks opens everything the built site points at.
 //
@@ -89,7 +105,7 @@ func CheckLinks(root string) ([]Broken, error) {
 		if err != nil {
 			return err
 		}
-		for _, target := range references(string(data)) {
+		for _, target := range references(meta.ReplaceAllString(string(data), "")) {
 			if bad := resolve(page, target, have); bad != nil {
 				broken = append(broken, *bad)
 			}
@@ -118,8 +134,13 @@ func resolve(page, target string, have func(string) bool) *Broken {
 	}
 	// A reference to a place on the same page is not a file and is checked by
 	// the id being there, which nothing here writes yet.
-	if strings.HasPrefix(trimmed, "#") {
+	if strings.HasPrefix(trimmed, "#") || strings.HasPrefix(trimmed, "data:") {
 		return nil
+	}
+	for _, ok := range offSite {
+		if strings.HasPrefix(trimmed, ok) {
+			return nil
+		}
 	}
 	if strings.HasPrefix(trimmed, "//") || strings.Contains(before(trimmed, "/"), ":") {
 		return fail("leaves the site, and this site is self contained")
@@ -138,10 +159,26 @@ func resolve(page, target string, have func(string) bool) *Broken {
 	if strings.HasPrefix(full, "..") {
 		return fail("climbs out of the site root")
 	}
-	if !have(full) {
+	// An address is a file, a directory that has an index in it, or a page
+	// written as name.html and linked to without the extension, which is how
+	// both hosts serve it.
+	switch {
+	case strings.HasSuffix(clean, "/") || clean == "." || clean == "..":
+		if !have(path.Join(full, "index.html")) {
+			return fail("there is no " + path.Join(full, "index.html"))
+		}
+	case have(full) && !isDir(have, full):
+	case have(full + ".html"):
+	default:
 		return fail("there is no " + full)
 	}
 	return nil
+}
+
+// isDir says whether an address that exists is a directory, which a link
+// without a trailing slash does not reach on every host.
+func isDir(have func(string) bool, full string) bool {
+	return have(path.Join(full, "index.html")) && !strings.Contains(path.Base(full), ".")
 }
 
 // before is the part of a string up to the first separator, or all of it.
