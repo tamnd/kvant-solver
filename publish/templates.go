@@ -1,103 +1,207 @@
 package publish
 
-import "html/template"
+import (
+	_ "embed"
+	"html/template"
+)
 
-// The templates are here rather than in files because they are small, because
-// embedding them would put the site's markup out of reach of the guard's own
-// tests,
-// and because the whole point of this package is that nothing about the build
-// needs a second toolchain.
+// The frame every page is written into.
 //
-// There is no JavaScript in any of them. A reader with scripting off sees the
-// finished article, the typeset mathematics and every link, because all of that
-// was decided here rather than in the browser. That is a requirement of the
-// milestone and it is also the only honest way to publish a corpus whose
-// content is mathematics.
+// One layout, one stylesheet and one script, the last two embedded from
+// assets/, because the whole point of this package is that nothing about the
+// build needs a second toolchain.
+//
+// The script is an addition and never a requirement. A reader with scripting
+// off sees the finished article, the typeset mathematics, the contents of the
+// issue and every link, because all of that was decided here rather than in
+// the browser. What they lose is search, the theme button and the keys.
 
-// The four views in the header are written on every build even when they are
-// empty, so that the link in this layout always lands somewhere. A corpus with
-// no problems in it yet still gets a problems page that says so, which is a
-// smaller thing to maintain than a header that changes shape depending on what
-// has been read.
+//go:embed assets/site.css
+var siteCSS string
+
+//go:embed assets/site.js
+var siteJS string
+
+//go:embed assets/theme.js
+var themeJS string
+
+// icon is the mark in the browser tab: the magazine's initial on its red.
+// It is written into every page rather than shipped as a file, since it is a
+// hundred and fifty bytes and a file would be one more request on every
+// first visit.
+const icon = `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%23c0281f'/%3E%3Ctext x='16' y='24' font-family='Georgia,serif' font-size='22' font-weight='700' fill='white' text-anchor='middle'%3E%D0%9A%3C/text%3E%3C/svg%3E`
+
 const layout = `<!doctype html>
-<html lang="ru">
+<html lang="{{.Lang}}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{{.Title}}</title>
+{{with .Description}}<meta name="description" content="{{.}}">
+{{end}}<meta name="color-scheme" content="light dark">
+<meta property="og:title" content="{{.Title}}">
+<meta property="og:site_name" content="{{.T.Brand}}">
+{{with .Canonical}}<link rel="canonical" href="{{.}}">
+{{end}}{{range .Alternates}}<link rel="alternate" hreflang="{{.Lang}}" href="{{.Href}}">
+{{end}}<link rel="icon" href="{{.Icon}}">
+<script src="{{.Root}}assets/theme.js"></script>
 <link rel="stylesheet" href="{{.Root}}assets/katex.min.css">
 <link rel="stylesheet" href="{{.Root}}assets/site.css">
+<script defer src="{{.Root}}assets/site.js"></script>
 </head>
 <body>
-<header>
-<a class="home" href="{{.Root}}index.html">Квант</a>
-<nav>
-<a href="{{.Root}}rubrics/index.html">рубрики</a>
-<a href="{{.Root}}authors/index.html">авторы</a>
-<a href="{{.Root}}problems/index.html">задачи</a>
-<a href="{{.Root}}tags/index.html">теги</a>
-</nav>
+<a class="skip" href="#main">{{.T.Skip}}</a>
+<header class="topbar">
+{{if .Nav}}<button class="icon-btn menu" type="button" data-toggle="nav" aria-label="{{.T.Menu}}" aria-expanded="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
+{{end}}{{if .Side}}<button class="icon-btn side-btn" type="button" data-toggle="side" aria-label="{{.T.Contents}}" aria-expanded="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6h11M9 12h11M9 18h11M4 6h1M4 12h1M4 18h1"/></svg></button>
+{{end}}<a class="brand" href="{{.HomeHref}}"><span class="logo">К</span><span class="brand-text">{{.T.Brand}}</span></a>
+{{if .Nav}}<nav class="primary" aria-label="{{.T.Archive}}">{{range .Nav}}<a href="{{.Href}}"{{if .Current}} aria-current="page"{{end}}>{{.Text}}</a>{{end}}</nav>
+<form class="find" action="{{.SearchHref}}" method="get" role="search"><input name="q" type="search" placeholder="{{.T.SearchHint}}" aria-label="{{.T.Search}}" autocomplete="off"><kbd>/</kbd></form>
+<a class="icon-btn search-btn" href="{{.SearchHref}}" aria-label="{{.T.Search}}"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6"/><path d="M20 20l-4.5-4.5"/></svg></a>
+{{end}}{{if .Langs}}<nav class="langs" aria-label="{{.T.Languages}}">{{range .Langs}}{{if .Current}}<span class="here" title="{{.Name}}">{{.Lang}}</span>{{else}}<a href="{{.Href}}" hreflang="{{.Lang}}" lang="{{.Lang}}" title="{{.Name}}">{{.Lang}}</a>{{end}}{{end}}</nav>
+{{end}}<button class="icon-btn" type="button" data-theme-toggle aria-label="{{.T.Theme}}"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 1 0 16z" fill="currentColor"/></svg></button>
 </header>
-<main>
-{{template "body" .}}
-</main>
+<div class="shell{{if .Side}} has-side{{end}}">
+{{with .Side}}<aside class="side" id="side" aria-label="{{$.T.Contents}}">
+<a class="side-head" href="{{.Href}}"><span class="eyebrow">{{.Kicker}}</span><span class="title">{{.Title}}</span></a>
+<ol>
+{{range .Items}}<li><a href="{{.Href}}"{{if .Current}} aria-current="page"{{end}}><span>{{.Text}}</span>{{if .Note}}<span class="n">{{.Note}}</span>{{end}}</a></li>
+{{end}}</ol>
+{{with .More}}<a class="more" href="{{.Href}}">{{.Text}}</a>
+{{end}}</aside>
+{{end}}<main id="main">
+{{if .Crumbs}}<nav class="crumbs" aria-label="Breadcrumb">{{range $i, $c := .Crumbs}}{{if $i}}<span class="sep">/</span>{{end}}<a href="{{$c.Href}}">{{$c.Text}}</a>{{end}}</nav>
+{{end}}{{template "body" .}}
+{{if or .Prev .Next}}<nav class="pager" aria-label="{{.T.Prev}} / {{.T.Next}}">{{with .Prev}}<a class="prev" href="{{.Href}}" rel="prev"><span class="l">&larr; {{.Note}}</span><span class="t">{{.Text}}</span></a>{{end}}{{with .Next}}<a class="next" href="{{.Href}}" rel="next"><span class="l">{{.Note}} &rarr;</span><span class="t">{{.Text}}</span></a>{{end}}</nav>
+{{end}}{{with .Foot}}<p class="foot-note">{{.}}</p>
+{{end}}</main>
+</div>
+<footer class="site-foot"><div class="in">
+<span>{{.T.Brand}} · {{.T.Tagline}}</span>
+<a href="https://github.com/tamnd/kvant">{{.T.Source}}</a>
+{{if .FootLangs}}<span class="langs-foot">{{range .FootLangs}}<a href="{{.Href}}" hreflang="{{.Lang}}" lang="{{.Lang}}">{{.Name}}</a>{{end}}</span>
+{{end}}</div></footer>
 </body>
 </html>
 `
 
 func mustParse(name, body string) *template.Template {
 	t := template.Must(template.New(name).Parse(layout))
-	return template.Must(t.New("body").Parse(body))
+	template.Must(t.New("body").Parse(body))
+	return t
 }
 
-// listTmpl is the archive, each year, and every view that is a list of things
-// with a line of explanation over it. They are the same page with different
-// things on it, and writing four more templates to say so would be four more
-// places for the markup to drift.
-var listTmpl = mustParse("list", `
-<h1>{{.Title}}</h1>
-{{if .Lede}}<p class="lede">{{.Lede}}</p>{{end}}
-<ul class="list">
-{{range .Items}}<li><a href="{{.Href}}">{{.Title}}</a>{{if .Note}} <span class="note">{{.Note}}</span>{{end}}</li>
-{{else}}<li class="note">пока пусто</li>
+// rows is the one list of the site: a title, a note to the right of it and a
+// line under it. The archive, the contents of an issue, the sections, the
+// authors and the problems are all this list with different things in it, and
+// writing it once is what keeps them looking like one site.
+const rows = `{{define "rows"}}<ul class="rows">
+{{range .}}<li{{with .ID}} id="{{.}}"{{end}}><a href="{{.Href}}"><span class="t">{{.Text}}</span>{{if .Note}}<span class="n">{{.Note}}</span>{{end}}{{if or .Kicker .Sub}}<span class="s">{{with .Kicker}}<span class="r">{{.}}</span>{{end}}{{.Sub}}</span>{{end}}</a></li>
+{{end}}</ul>{{end}}`
+
+// landingTmpl is the root of the site, which belongs to no language and so
+// says what the magazine is in every one it is published in.
+var landingTmpl = mustParse("landing", `
+<section class="hero">
+<h1>Квант · Kvant</h1>
+{{range .Data.Langs}}<p class="lede" lang="{{.Lang}}">{{.Tagline}}</p>
+{{end}}</section>
+<ul class="langcards">
+{{range .Data.Langs}}<li><a href="{{.Href}}" lang="{{.Lang}}" hreflang="{{.Lang}}"><span class="k">{{.Name}}</span><span class="t">{{.Brand}}</span><span class="d">{{.About}}</span><span class="n">{{.Counts}}</span></a></li>
 {{end}}</ul>
 `)
 
-// issueTmpl is one issue, articles first and then the sheets.
+// homeTmpl is the archive in one language: every year, and every issue of it
+// that has been read as a tile, so that any issue is two clicks from anywhere.
+var homeTmpl = mustParse("home", rows+`
+<section class="hero">
+<span class="eyebrow">{{.T.Tagline}}</span>
+<h1>{{.T.Brand}}</h1>
+<p class="lede">{{.T.About}}</p>
+<form class="find-big" action="{{.SearchHref}}" method="get" role="search"><input name="q" type="search" placeholder="{{.T.SearchHint}}" aria-label="{{.T.Search}}" autocomplete="off"><button type="submit">{{.T.Search}}</button></form>
+<div class="stats">{{range .Data.Stats}}<div><b>{{.Text}}</b><span>{{.Note}}</span></div>{{end}}</div>
+</section>
+<ul class="quick">{{range .Data.Quick}}<li><a href="{{.Href}}">{{.Text}}<span>{{.Note}}</span></a></li>{{end}}</ul>
+{{range .Data.Decades}}<section class="decade">
+<h2>{{.Title}}</h2>
+<div class="years">
+{{range .Years}}<div class="year"><a href="{{.Href}}">{{.Year}}</a><ul class="tiles">{{range .Issues}}<li><a href="{{.Href}}" title="{{.Note}}">{{.Text}}</a></li>{{end}}</ul></div>
+{{end}}</div>
+</section>
+{{else}}<p class="empty">{{.T.Empty}}</p>
+{{end}}`)
+
+// yearTmpl is one year, its issues as cards with the opening of their
+// contents on them.
+var yearTmpl = mustParse("year", `
+<div class="head"><h1>{{.Title}}</h1>{{with .Data.Lede}}<p class="lede">{{.}}</p>{{end}}</div>
+<ul class="cards">
+{{range .Data.Issues}}<li><a href="{{.Href}}"><span class="k">{{$.T.Issue}}</span><span class="t">№ {{.Text}}</span><span class="n">{{.Note}}</span>{{if .Titles}}<ul>{{range .Titles}}<li>{{.}}</li>{{end}}</ul>{{end}}</a></li>
+{{end}}</ul>
+`)
+
+// issueTmpl is one issue: its articles and the way to its sheets.
 //
-// Both are listed because both are real. The articles are what the magazine
-// published and the pages are what was read, and an article is a view of pages
-// rather than a replacement for them: anything no article claimed survives only
-// on the sheet it was printed on.
-var issueTmpl = mustParse("issue", `
+// Both are there because both are real. The articles are what the magazine
+// published and the sheets are what was read, and an article is a view of
+// sheets rather than a replacement for them: anything no article claimed
+// survives only on the sheet it was printed on.
+var issueTmpl = mustParse("issue", rows+`
+<div class="head">
+<span class="eyebrow"><a href="{{.Data.YearHref}}">{{.Data.Year}}</a></span>
 <h1>{{.Title}}</h1>
-<h2>Статьи</h2>
-<ul class="list">
-{{range .Articles}}<li><a href="{{.Href}}">{{.Title}}</a>{{if .Note}} <span class="note">{{.Note}}</span>{{end}}</li>
-{{else}}<li class="note">номер ещё не разобран на статьи</li>
-{{end}}</ul>
-<h2>Листы</h2>
-<ul class="sheets">
-{{range .Pages}}<li><a href="{{.Href}}">{{.Title}}</a>{{if .Note}} <span class="note">{{.Note}}</span>{{end}}</li>
-{{else}}<li class="note">ни один лист ещё не прочитан</li>
-{{end}}</ul>
+<div class="meta">{{range .Data.Chips}}{{if .Href}}<a class="chip" href="{{.Href}}">{{.Text}}</a>{{else}}<span class="chip">{{.Text}}</span>{{end}}{{end}}</div>
+</div>
+<h2>{{.T.Articles}}</h2>
+{{if .Data.Articles}}{{template "rows" .Data.Articles}}{{else}}<p class="empty">{{.T.NoArticles}}</p>{{end}}
 `)
 
-// articleTmpl is one article. Everything in the meta line that names something
-// the site also indexes is a link to that index, because a rubric page nothing
-// points at is a page nobody will find.
+// articleTmpl is one article. Everything in the head that names something the
+// site also indexes is a link into that index.
 var articleTmpl = mustParse("article", `
 <article>
+<div class="head">
+{{with .Data.Rubric}}<span class="eyebrow"><a href="{{.Href}}">{{.Text}}</a></span>{{end}}
 <h1>{{.Title}}</h1>
-<p class="meta">
-{{if .Authors}}<span class="authors">{{range $i, $a := .Authors}}{{if $i}}, {{end}}<a href="{{$a.Href}}">{{$a.Title}}</a>{{end}}</span>{{end}}
-{{with .Rubric}}<span class="rubric"><a href="{{.Href}}">{{.Title}}</a></span>{{end}}
-<span class="issue"><a href="{{.Up}}index.html">{{.Issue}}</a></span>
-{{if .Pages}}<span class="pages">с. {{.Pages}}</span>{{end}}
-{{with .Tag}}<span class="tag"><a href="{{.Href}}">{{.Title}}</a></span>{{end}}
-</p>
-{{.Body}}
+{{if .Data.Authors}}<p class="by">{{range $i, $a := .Data.Authors}}{{if $i}}, {{end}}<a href="{{$a.Href}}">{{$a.Text}}</a>{{end}}</p>{{end}}
+<div class="meta">{{range .Data.Chips}}{{if .Href}}<a class="chip{{with .Kicker}} {{.}}{{end}}" href="{{.Href}}">{{.Text}}</a>{{else}}<span class="chip">{{.Text}}</span>{{end}}{{end}}</div>
+</div>
+{{with .Data.Notice}}<p class="notice">{{.Text}}{{with .Href}} <a href="{{.}}">{{$.T.Original}} &rarr;</a>{{end}}</p>{{end}}
+<div class="doc">
+{{.Data.Body}}
+</div>
 </article>
+`)
+
+// sheetsTmpl is every sheet of one issue as it was read, one under the other.
+//
+// They are one page rather than one page each because an issue is read in
+// order, because the sheets of a magazine are short, and because a page each
+// was two thirds of the files of the site. The provenance is on every sheet,
+// because a sheet lifted out of a born digital PDF and a sheet a model read off
+// a scan are not the same kind of evidence.
+var sheetsTmpl = mustParse("sheets", `
+<div class="head">
+<span class="eyebrow"><a href="{{.Data.IssueHref}}">{{.Data.Issue}}</a></span>
+<h1>{{.Title}}</h1>
+</div>
+{{range .Data.Sheets}}<section class="sheet" id="{{.ID}}">
+<div class="sheet-head"><h2><a href="#{{.ID}}">{{.Text}}</a></h2>{{with .Label}}<span>{{.}}</span>{{end}}{{with .How}}<span class="how">{{.}}</span>{{end}}</div>
+<div class="doc">
+{{.Body}}
+</div>
+</section>
+{{else}}<p class="empty">{{.T.NoPages}}</p>
+{{end}}`)
+
+// listTmpl is every view that is a list with a line of explanation over it.
+var listTmpl = mustParse("list", rows+`
+<div class="head">{{with .Data.Kicker}}<span class="eyebrow">{{.}}</span>{{end}}<h1>{{.Title}}</h1>{{with .Data.Lede}}<p class="lede">{{.}}</p>{{end}}</div>
+{{if .Data.Letters}}<nav class="letters">{{range .Data.Groups}}<a href="#{{.ID}}">{{.Title}}</a>{{end}}</nav>{{end}}
+{{if .Data.Groups}}{{range .Data.Groups}}<section class="group" id="{{.ID}}">{{if .Title}}<h2>{{.Title}}</h2>{{end}}
+{{template "rows" .Items}}
+</section>
+{{end}}{{else}}{{if .Data.Items}}{{template "rows" .Data.Items}}{{else}}<p class="empty">{{.T.Empty}}</p>{{end}}{{end}}
 `)
 
 // problemTmpl is one problem of the Задачник, with both of its printed halves.
@@ -108,97 +212,49 @@ var articleTmpl = mustParse("article", `
 // land on the statement rather than on nothing.
 var problemTmpl = mustParse("problem", `
 <article class="problem">
+<div class="head">
+<span class="eyebrow"><a href="{{.Data.IndexHref}}">{{.T.Problems}}</a></span>
 <h1>{{.Title}}</h1>
-<p class="meta">
-{{if .Authors}}<span class="authors">{{.Authors}}</span>{{end}}
-{{with .Posed}}<span class="posed">условие: {{if .Href}}<a href="{{.Href}}">{{.Title}}</a>{{else}}{{.Title}}{{end}}{{if .Note}}, с. {{.Note}}{{end}}</span>{{end}}
-{{with .Solved}}<span class="solved">решение: {{if .Href}}<a href="{{.Href}}">{{.Title}}</a>{{else}}{{.Title}}{{end}}{{if .Note}}, с. {{.Note}}{{end}}</span>{{end}}
-{{with .Tag}}<span class="tag"><a href="{{.Href}}">{{.Title}}</a></span>{{end}}
-</p>
-{{.Body}}
+{{with .Data.Authors}}<p class="by">{{.}}</p>{{end}}
+<div class="meta">{{range .Data.Chips}}{{if .Href}}<a class="chip{{with .Kicker}} {{.}}{{end}}" href="{{.Href}}">{{.Text}}</a>{{else}}<span class="chip">{{.Text}}</span>{{end}}{{end}}</div>
+</div>
+<div class="doc">
+{{.Data.Body}}
+</div>
 </article>
 `)
 
-// tagTmpl is one tag.
-//
-// A tag is a permanent address and the path of the thing it names is not: an
-// article's file carries a slug made out of its title, and a retitled article
-// moves. So the tag gets a page of its own that does nothing but point at
-// wherever the object is now, and a citation written against the tag keeps
-// working when the object moves. This is the Stacks Project's arrangement and
-// it is the reason the tags file exists at all.
-var tagTmpl = mustParse("tag", `
-<h1>Тег {{.Tag}}</h1>
-<p class="lede">Постоянный адрес. Он закреплён за материалом навсегда, даже если тот сменит название или путь.</p>
-<ul class="list">
-<li><a href="{{.Href}}">{{.Title}}</a>{{if .Note}} <span class="note">{{.Note}}</span>{{end}}</li>
-</ul>
+// tagsTmpl is one shard of the tags: every tag that starts with one character,
+// each row the permanent address of what it names.
+var tagsTmpl = mustParse("tags", `
+<div class="head"><span class="eyebrow"><a href="{{.Data.IndexHref}}">{{.T.Tags}}</a></span><h1>{{.Title}}</h1><p class="lede">{{.T.TagLede}}</p></div>
+<ul class="rows" data-tags>
+{{range .Data.Tags}}<li id="{{.ID}}" data-go="{{.Go}}"><div class="row"><a class="t" href="{{.Go}}"><span class="tag">{{.ID}}</span> {{.Text}}</a><span class="n">{{.Note}}</span>{{if .Alts}}<span class="alts">{{range .Alts}}<a href="{{.Href}}" hreflang="{{.Lang}}">{{.Lang}}</a>{{end}}</span>{{end}}</div></li>
+{{end}}</ul>
 `)
 
-// pageTmpl is one sheet as it was read.
-//
-// The provenance is on the page and not hidden in the repository, because a
-// sheet lifted out of a born digital PDF and a sheet a model read off a scan
-// are not the same kind of evidence, and a reader comparing two readings of the
-// same paper should be able to see which is which.
-var pageTmpl = mustParse("page", `
-<article class="sheet">
-<h1>{{.Title}}</h1>
-<p class="meta">
-{{if .Label}}<span class="folio">напечатано: {{.Label}}</span>{{end}}
-<span class="issue"><a href="{{.Up}}index.html">номер</a></span>
-{{if .Extraction}}<span class="how">{{.Extraction}}{{if .Model}}: {{.Model}}{{end}}</span>{{end}}
-</p>
-{{.Body}}
-</article>
+// tagIndexTmpl is the way to a tag by hand: a box to type it in and the
+// thirty six pages they are filed on.
+var tagIndexTmpl = mustParse("tagindex", rows+`
+<div class="head"><h1>{{.Title}}</h1><p class="lede">{{.T.TagIndexLede}}</p></div>
+<form class="lookup" data-base="{{.Data.Base}}"><input maxlength="4" placeholder="{{.T.TagLookup}}" aria-label="{{.T.TagLookup}}" autocomplete="off" spellcheck="false"><button type="submit">&rarr;</button></form>
+{{template "rows" .Data.Items}}
 `)
 
-// siteCSS is the whole of the site's own styling. KaTeX brings its own.
-const siteCSS = `:root { --ink: #1a1a1a; --faint: #6b6b6b; --rule: #e0ddd6; --paper: #fbfaf7; }
-* { box-sizing: border-box; }
-body { margin: 0; background: var(--paper); color: var(--ink);
-  font: 17px/1.65 Georgia, "Times New Roman", serif; }
-header { border-bottom: 1px solid var(--rule); padding: 1rem 1.5rem;
-  display: flex; flex-wrap: wrap; gap: .5rem 1.5rem; align-items: baseline; }
-header a { color: var(--ink); font-weight: bold; letter-spacing: .06em;
-  text-transform: uppercase; text-decoration: none; font-size: .85rem; }
-header nav { display: flex; flex-wrap: wrap; gap: .5rem 1rem; }
-header nav a { color: var(--faint); font-weight: normal; }
-main { max-width: 40rem; margin: 0 auto; padding: 2rem 1.5rem 6rem; }
-h1 { font-size: 1.6rem; line-height: 1.25; margin: 0 0 1rem; }
-h2 { font-size: 1.1rem; margin: 2.5rem 0 .75rem; }
-a { color: #23527c; }
-p { margin: 0 0 1.1rem; }
-.meta { color: var(--faint); font-size: .85rem; margin-bottom: 2rem;
-  border-bottom: 1px solid var(--rule); padding-bottom: 1rem; }
-.meta span + span::before { content: " · "; }
-.note { color: var(--faint); font-size: .85rem; }
-.lede { color: var(--faint); font-size: .9rem; margin-top: -.5rem; }
-ul.list, ul.sheets { list-style: none; padding: 0; }
-ul.list li { margin-bottom: .5rem; }
-ul.sheets { display: flex; flex-wrap: wrap; gap: .5rem 1rem; }
-ul.sheets li { font-size: .9rem; }
+// searchTmpl is the search page. The box works without the script only in the
+// sense that it submits; the matching is done in the browser against the index
+// the build wrote next to it.
+var searchTmpl = mustParse("search", rows+`
+<div class="search-page">
+<div class="head"><h1>{{.T.Search}}</h1></div>
+<form class="find-big" action="" method="get" role="search"><input name="q" type="search" placeholder="{{.T.SearchHint}}" aria-label="{{.T.Search}}" autocomplete="off"></form>
+<p class="search-status" aria-live="polite"><noscript>{{.T.SearchNoJS}}</noscript></p>
+<ul class="rows" data-search="{{.Data.Index}}" data-root="{{.Root}}" data-none="{{.T.SearchNone}}" data-empty="{{.T.SearchEmpty}}"></ul>
+</div>
+`)
 
-/* The marks are the reading's record of the shape of the sheet. A figure is
-   the one that has to be visible: the corpus holds the magazine's text and none
-   of its pictures, and an article that says look at the figure is unreadable if
-   the page is silent about where the figure was. */
-.mark { color: var(--faint); font-size: .8rem; }
-/* The mark carries a caption when the reading found one, so the label needs a
-   space after it and nothing after that when there is no caption. */
-.mark.figure::before { content: "[рисунок]\a0"; }
-.mark.column { display: block; height: .6rem; }
-.mark.rubric { display: block; height: .6rem; }
-.mark.folio { float: right; margin-left: 1rem; font-size: .75rem;
-  color: var(--faint); }
-.mark.folio::before { content: "с. "; }
-
-/* A formula KaTeX would not take. The source is shown rather than hidden,
-   because the reading failed here and pretending otherwise helps nobody. */
-.tex-failed { background: #fdf0ee; border-bottom: 1px dotted #b04a3a;
-  font-size: .9em; }
-
-.katex { font-size: 1em; }
-.katex-display { overflow-x: auto; overflow-y: hidden; padding: .25rem 0; }
-@media (max-width: 30rem) { main { padding: 1.5rem 1rem 4rem; } }
-`
+// notFoundTmpl is what both hosts serve for an address that holds nothing.
+var notFoundTmpl = mustParse("notfound", rows+`
+<div class="head"><h1>{{.Title}}</h1><p class="lede">{{.T.NotFoundLede}}</p></div>
+{{template "rows" .Data.Items}}
+`)

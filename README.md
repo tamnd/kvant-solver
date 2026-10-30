@@ -61,6 +61,33 @@ kvant report cost
 
 The scans are tens of gigabytes of JPEG and they do not belong in a repo of text, so they land in a cache outside the checkout: `--cache`, or `KVANT_CACHE`, or the user cache directory. A sheet whose bytes are already there is not asked for again, so a run that broke on issue nine picks up where it stopped.
 
+## The site
+
+`kvant publish` turns the corpus into a static site in three languages, and `kvant serve` shows it the way the hosts will before anything is uploaded:
+
+```
+go build -o kvant ./cmd/kvant
+./kvant publish --corpus ../kvant --out site     # about two minutes on a laptop
+./kvant serve --dir site                         # http://localhost:8080
+```
+
+Everything on it links relatively and pages have no extension, so one build works at the root of a domain and under a path, and on any host that serves `x.html` at `x`. Cloudflare Pages and GitHub Pages both do.
+
+| flag | |
+|---|---|
+| `--lang ru,en` | publish only these languages; the default is every one the corpus has |
+| `--site-url` | where this copy will live, used by the missing page and the sitemap |
+| `--canonical-url` | the address search engines should prefer, when this copy is a mirror |
+| `--no-sheets` | leave out the page by page sheets, about half the size of the site |
+| `--max-files`, `--max-mb` | fail the build when it outgrows a host, before anything is uploaded |
+| `--strict` | fail on a formula that could not be typeset rather than marking it |
+| `--report file` | write those formulas out, file and line |
+| `--clean=false` | keep what is already in `--out` |
+
+The build refuses to write anything a static site of text is not made of: no images, no PDFs, no script but its own two, and no tag that fetches something from somewhere else. It then opens every link it wrote and fails on one that goes nowhere.
+
+The corpus repo deploys it on every push to `main` (`.github/workflows/site.yml` there): the whole site to Cloudflare Pages at kvant.tamnd.com, and a mirror without the sheets to GitHub Pages at tamnd.github.io/kvant, with its canonical links on the first.
+
 ## Layout
 
 ```

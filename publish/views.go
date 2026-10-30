@@ -3,7 +3,6 @@ package publish
 import (
 	"fmt"
 	"html/template"
-	"path"
 	"sort"
 	"strings"
 	"unicode"
@@ -30,45 +29,76 @@ import (
 // reason the corpus does: the printed text moves between issues and the slug
 // does not.
 type doc struct {
-	// Kind is article, sheet or problem.
+	Lang string
+	// Kind is article or problem.
 	Kind string
-	// Href is where the page went, from the site root.
-	Href string
+	// Addr is the page, as an address from the site root.
+	Addr string
 	// Title is what to call it in a list.
 	Title string
-	// Year and Number are the issue it belongs to, for the note in a list. A
-	// problem belongs to the issue that posed it.
-	Year   int
-	Number string
-	// Issue is the same thing as the corpus writes it, kept for the search
-	// index so that a consumer can join back onto the corpus.
-	Issue   string
+	// Key is the issue it belongs to. A problem belongs to the issue that
+	// posed it, and has none when that is not known.
+	Key     corpus.IssueKey
 	Authors []string
 	// Rubric is the slug, not the banner.
 	Rubric string
 	Tag    string
 	Pages  string
-	// Text is the body with the markup taken off, for the search index.
-	Text string
 }
 
 // where is the issue a doc came out of, for the second column of a list.
 func (d doc) where() string {
-	if d.Year == 0 {
+	if d.Key.Zero() {
 		return ""
 	}
-	return fmt.Sprintf("%d, №%s", d.Year, d.Number)
+	return fmt.Sprintf("%d · %s", d.Key.Year, d.Key.Number)
 }
 
-// views writes everything that cuts across issues.
-func (s *Site) views() error {
-	if err := s.rubricViews(); err != nil {
+// row is a doc as a line in a list on the page at from.
+func (d doc) row(from string) link {
+	r := link{Href: href(from, d.Addr), Text: d.Title, Note: d.where(), Sub: strings.Join(d.Authors, ", ")}
+	if d.Rubric != "" {
+		r.Kicker = rubricTitle(d.Lang, d.Rubric)
+	}
+	return r
+}
+
+// listData is what listTmpl is filled with.
+type listData struct {
+	Kicker, Lede string
+	Letters      bool
+	Groups       []group
+	Items        []link
+}
+
+type group struct {
+	ID, Title string
+	Items     []link
+}
+
+// views writes everything in one language that cuts across issues.
+//
+// The pages of each view are added to what the build knows before the first of
+// them is written, so that the language switcher on a section page can go to
+// the same section in another language when it has one.
+func (s *Site) views(lang string) error {
+	for _, d := range s.docs[lang] {
+		if d.Rubric != "" {
+			s.known[rubricURL(lang, d.Rubric)] = true
+		}
+		for _, who := range d.Authors {
+			if rubric.Slug(who) != "" {
+				s.known[authorURL(lang, who)] = true
+			}
+		}
+	}
+	if err := s.rubricViews(lang); err != nil {
 		return err
 	}
-	if err := s.authorViews(); err != nil {
+	if err := s.authorViews(lang); err != nil {
 		return err
 	}
-	return s.tagViews()
+	return s.problemIndex(lang)
 }
 
 // rubricViews writes the section index and a page for each section.
@@ -77,46 +107,38 @@ func (s *Site) views() error {
 // package rubric lists every standing section the magazine ever ran, and
 // publishing an empty page for the ones this corpus has not reached yet would
 // put twenty seven entries in front of a reader when nine of them are real.
-func (s *Site) rubricViews() error {
-	inSection := map[string][]indexEntry{}
-	for _, d := range s.docs {
-		if d.Kind != "article" || d.Rubric == "" {
-			continue
+func (s *Site) rubricViews(lang string) error {
+	t := wordsFor(lang)
+	inSection := map[string][]doc{}
+	for _, d := range s.docs[lang] {
+		if d.Kind == "article" && d.Rubric != "" {
+			inSection[d.Rubric] = append(inSection[d.Rubric], d)
 		}
-		inSection[d.Rubric] = append(inSection[d.Rubric], indexEntry{
-			Href:  "../" + d.Href,
-			Title: d.Title,
-			Note:  d.where(),
-		})
 	}
-
-	var index []indexEntry
+	index := rubricsURL(lang)
+	var rows []link
 	for slug, list := range inSection {
-		name := rubric.BySlug(slug).Title
-		if err := s.emit(path.Join("rubrics", slug+".html"), listTmpl, map[string]any{
-			"Title": name,
-			"Lede":  plural(len(list), "материал", "материала", "материалов") + " под этой рубрикой.",
-			"Items": list,
-			"Root":  "../",
-		}); err != nil {
+		addr := rubricURL(lang, slug)
+		name := rubricTitle(lang, slug)
+		items := make([]link, 0, len(list))
+		for _, d := range list {
+			r := d.row(addr)
+			r.Kicker = ""
+			items = append(items, r)
+		}
+		p := s.frame(lang, addr, name)
+		p.Crumbs = s.crumbs(lang, addr, index, t.Rubrics)
+		p.Data = listData{Kicker: t.Rubrics, Lede: t.Count(len(list), "article"), Items: items}
+		if err := s.emit(addr, listTmpl, p); err != nil {
 			return err
 		}
-		index = append(index, indexEntry{
-			Href:  slug + ".html",
-			Title: name,
-			Note:  plural(len(list), "материал", "материала", "материалов"),
-		})
+		rows = append(rows, link{Href: href(index, addr), Text: name, Note: t.Count(len(list), "article")})
 	}
-	sort.Slice(index, func(i, j int) bool {
-		return alphabetical(index[i].Title) < alphabetical(index[j].Title)
-	})
-
-	return s.emit("rubrics/index.html", listTmpl, map[string]any{
-		"Title": "Рубрики",
-		"Lede":  "Постоянные разделы журнала. Рубрика опознаётся по слагу, а не по тому, как её набрали в конкретном номере.",
-		"Items": index,
-		"Root":  "../",
-	})
+	sort.Slice(rows, func(i, j int) bool { return alphabetical(rows[i].Text) < alphabetical(rows[j].Text) })
+	p := s.frame(lang, index, t.Rubrics)
+	p.Crumbs = s.crumbs(lang, index)
+	p.Data = listData{Lede: t.RubricsLede, Items: rows}
+	return s.emit(index, listTmpl, p)
 }
 
 // authorViews writes the author index and a page for each name.
@@ -129,13 +151,15 @@ func (s *Site) rubricViews() error {
 // index built out of what the pages say is one that can be checked against the
 // pages, which is worth more here than a fuzzy match against a list from
 // somewhere else.
-func (s *Site) authorViews() error {
+func (s *Site) authorViews(lang string) error {
+	t := wordsFor(lang)
 	type person struct {
+		slug      string
 		spellings map[string]int
-		items     []indexEntry
+		docs      []doc
 	}
 	people := map[string]*person{}
-	for _, d := range s.docs {
+	for _, d := range s.docs[lang] {
 		for _, name := range d.Authors {
 			slug := rubric.Slug(name)
 			if slug == "" {
@@ -143,216 +167,260 @@ func (s *Site) authorViews() error {
 			}
 			p := people[slug]
 			if p == nil {
-				p = &person{spellings: map[string]int{}}
+				p = &person{slug: slug, spellings: map[string]int{}}
 				people[slug] = p
 			}
 			p.spellings[name]++
-			p.items = append(p.items, indexEntry{
-				Href:  "../" + d.Href,
-				Title: d.Title,
-				Note:  d.where(),
-			})
+			p.docs = append(p.docs, d)
 		}
 	}
 
-	var index []indexEntry
-	for slug, p := range people {
+	index := authorsURL(lang)
+	letters := map[string][]link{}
+	for _, p := range people {
+		addr := authorsURL(lang) + p.slug
 		name := commonest(p.spellings)
-		lede := plural(len(p.items), "материал", "материала", "материалов") + "."
+		lede := t.Count(len(p.docs), "article") + "."
 		if len(p.spellings) > 1 {
-			lede += " Подписано также: " + strings.Join(others(p.spellings, name), ", ") + "."
+			lede += " " + t.SignedAlso + ": " + strings.Join(others(p.spellings, name), ", ") + "."
 		}
-		if err := s.emit(path.Join("authors", slug+".html"), listTmpl, map[string]any{
-			"Title": name,
-			"Lede":  lede,
-			"Items": p.items,
-			"Root":  "../",
-		}); err != nil {
+		items := make([]link, 0, len(p.docs))
+		for _, d := range p.docs {
+			items = append(items, d.row(addr))
+		}
+		pg := s.frame(lang, addr, name)
+		pg.Crumbs = s.crumbs(lang, addr, index, t.Authors)
+		pg.Data = listData{Kicker: t.Authors, Lede: lede, Items: items}
+		if err := s.emit(addr, listTmpl, pg); err != nil {
 			return err
 		}
-		index = append(index, indexEntry{
-			Href:  slug + ".html",
-			Title: name,
-			Note:  plural(len(p.items), "материал", "материала", "материалов"),
-		})
+		first := initial(surname(name))
+		letters[first] = append(letters[first], link{Href: href(index, addr), Text: name, Note: t.Count(len(p.docs), "article")})
 	}
-	sort.Slice(index, func(i, j int) bool {
-		return alphabetical(index[i].Title) < alphabetical(index[j].Title)
-	})
 
-	return s.emit("authors/index.html", listTmpl, map[string]any{
-		"Title": "Авторы",
-		"Lede":  "Имена так, как они напечатаны над статьями.",
-		"Items": index,
-		"Root":  "../",
-	})
+	var groups []group
+	for first, rows := range letters {
+		sort.Slice(rows, func(i, j int) bool {
+			a, b := alphabetical(surname(rows[i].Text)), alphabetical(surname(rows[j].Text))
+			if a != b {
+				return a < b
+			}
+			return rows[i].Text < rows[j].Text
+		})
+		groups = append(groups, group{ID: fmt.Sprintf("l-%x", first), Title: first, Items: rows})
+	}
+	sort.Slice(groups, func(i, j int) bool { return groups[i].Title < groups[j].Title })
+	p := s.frame(lang, index, t.Authors)
+	p.Crumbs = s.crumbs(lang, index)
+	p.Data = listData{Lede: t.AuthorsLede + " " + t.Count(len(people), "author") + ".", Letters: len(groups) > 1, Groups: groups}
+	return s.emit(index, listTmpl, p)
 }
 
-// tagViews writes a page for every tag and an index to reach them by.
+// surname is the part of a printed name an index files it under. The magazine
+// prints initials first, «А. Н. Колмогоров», so that is the last word.
+func surname(name string) string {
+	fields := strings.Fields(name)
+	if len(fields) == 0 {
+		return name
+	}
+	return fields[len(fields)-1]
+}
+
+// initial is the letter a name is filed under.
+func initial(name string) string {
+	for _, r := range alphabetical(name) {
+		return string(unicode.ToUpper(r))
+	}
+	return "#"
+}
+
+// tagViews writes the thirty six pages the tags are filed on and the page to
+// look one up from.
 //
-// The index is split on the first character rather than being one list, because
-// the corpus already carries five and a half thousand tags and one page of them
-// is half a megabyte a reader would download to look at four lines of it.
+// A tag names one thing in every language, so the tags are not under any of
+// them. A row goes to the Russian, which is the text the magazine printed and
+// the one every translation was made from, and names the translations beside
+// it.
 func (s *Site) tagViews() error {
-	shards := map[string][]indexEntry{}
-	seen := map[string]string{}
-	for _, d := range s.docs {
-		if d.Tag == "" {
-			continue
+	lang := s.Langs[0]
+	t := wordsFor(lang)
+	type entry struct {
+		tag, title, note, addr string
+		alts                   []alternate
+	}
+	byTag := map[string]*entry{}
+	for _, l := range s.Langs {
+		for _, d := range s.docs[l] {
+			if d.Tag == "" {
+				continue
+			}
+			e := byTag[d.Tag]
+			if e == nil {
+				e = &entry{tag: d.Tag, title: d.Title, note: d.where(), addr: d.Addr}
+				byTag[d.Tag] = e
+				continue
+			}
+			if l == s.Langs[0] {
+				return fmt.Errorf("tag %s is on both %s and %s, and a tag names one thing", d.Tag, e.addr, d.Addr)
+			}
+			e.alts = append(e.alts, alternate{Lang: l, Href: d.Addr})
 		}
-		if had, ok := seen[d.Tag]; ok {
-			return fmt.Errorf("tag %s is on both %s and %s, and a tag names one thing", d.Tag, had, d.Href)
-		}
-		seen[d.Tag] = d.Href
-		if err := s.emit(path.Join("tags", d.Tag+".html"), tagTmpl, map[string]any{
-			"Title": d.Title,
-			"Tag":   d.Tag,
-			"Href":  "../" + d.Href,
-			"Note":  d.where(),
-			"Root":  "../",
-		}); err != nil {
-			return err
-		}
-		first := d.Tag[:1]
-		shards[first] = append(shards[first], indexEntry{
-			Href:  d.Tag + ".html",
-			Title: d.Tag,
-			Note:  d.Title,
-		})
+	}
+	shards := map[string][]*entry{}
+	for _, e := range byTag {
+		first := strings.ToUpper(e.tag[:1])
+		shards[first] = append(shards[first], e)
 	}
 
-	var index []indexEntry
+	index := tagsURL()
+	var rows []link
 	for first, list := range shards {
-		sort.Slice(list, func(i, j int) bool { return list[i].Title < list[j].Title })
-		if err := s.emit(path.Join("tags", first+".html"), listTmpl, map[string]any{
-			"Title": "Теги на " + first,
-			"Items": list,
-			"Root":  "../",
-		}); err != nil {
+		addr := tagShard(first)
+		sort.Slice(list, func(i, j int) bool { return list[i].tag < list[j].tag })
+		type tagRow struct {
+			ID, Go, Text, Note string
+			Alts               []alternate
+		}
+		var out []tagRow
+		for _, e := range list {
+			r := tagRow{ID: e.tag, Go: href(addr, e.addr), Text: e.title, Note: e.note}
+			for _, a := range e.alts {
+				r.Alts = append(r.Alts, alternate{Lang: a.Lang, Href: href(addr, a.Href)})
+			}
+			out = append(out, r)
+		}
+		p := s.frame(lang, addr, t.TagsOn(first))
+		p.Crumbs = []link{{Href: href(addr, langURL(lang)), Text: t.Brand}, {Href: href(addr, index), Text: t.Tags}}
+		p.Data = struct {
+			IndexHref string
+			Tags      []tagRow
+		}{href(addr, index), out}
+		if err := s.emit(addr, tagsTmpl, p); err != nil {
 			return err
 		}
-		index = append(index, indexEntry{
-			Href:  first + ".html",
-			Title: first,
-			Note:  plural(len(list), "тег", "тега", "тегов"),
-		})
+		rows = append(rows, link{Href: href(index, addr), Text: first, Note: t.Count(len(list), "tag")})
 	}
-	sort.Slice(index, func(i, j int) bool { return index[i].Title < index[j].Title })
-
-	return s.emit("tags/index.html", listTmpl, map[string]any{
-		"Title": "Теги",
-		"Lede":  "У каждого материала есть тег из четырёх знаков. Он закреплён навсегда и не меняется, когда материал переименован или перемещён.",
-		"Items": index,
-		"Root":  "../",
-	})
+	sort.Slice(rows, func(i, j int) bool { return rows[i].Text < rows[j].Text })
+	p := s.frame(lang, index, t.Tags)
+	p.Crumbs = s.crumbs(lang, index)
+	p.Data = struct {
+		Base  string
+		Items []link
+	}{href(index, tagsURL()), rows}
+	return s.emit(index, tagIndexTmpl, p)
 }
 
-// problems writes the Задачник, one page per problem plus an index.
+// problems writes a run of the Задачник, one page per problem.
 //
 // A problem is not filed under an issue in the corpus and it is not filed under
 // one here either. It belongs to the issue that posed it and the issue that
 // printed the solution, which are usually two to four apart, and its number is
 // the name the olympiad literature already cites it by. So the number is the
 // path, and the two issues are links off it.
-func (s *Site) problems(published map[string]bool) (int, error) {
-	ids, err := s.Corpus.Problems(s.Lang)
-	if err != nil {
-		return 0, err
-	}
-
-	var index []indexEntry
+func (s *Site) problems(r *Renderer, lang string, ids []corpus.ProblemID) result {
+	var res result
+	t := wordsFor(lang)
 	for _, id := range ids {
 		var front corpus.ProblemFront
-		body, err := corpus.LoadUnchecked(s.Corpus.ProblemPath(s.Lang, id), &front)
+		body, err := corpus.LoadUnchecked(s.Corpus.ProblemPath(lang, id), &front)
 		if err != nil {
-			return 0, err
+			res.err = err
+			return res
 		}
-		html, bad, err := s.render.Render(body)
+		html, bad, err := r.Render(body)
 		if err != nil {
-			return 0, fmt.Errorf("%s: %w", id, err)
+			res.err = fmt.Errorf("%s/%s: %w", lang, id.Path(), err)
+			return res
 		}
-		source := path.Join("problems", strings.TrimPrefix(id.Path(), "problems/"))
-		s.noteBadMath(source, bad)
+		s.noteBadMath(&res.badMath, lang, id.Path(), bad)
 
-		href := strings.TrimSuffix(id.Path(), ".md") + ".html"
-		title := "Задача " + id.String()
-		posed := issueLink(front.PosedIn, front.PosedPages, published, "../../")
-		solved := issueLink(front.SolvedIn, front.SolvedPages, published, "../../")
-		var tag map[string]string
+		addr := problemURL(lang, id)
+		var chips []link
+		if posed := s.issueChip(lang, addr, t.Posed, front.PosedIn, front.PosedPages); posed != nil {
+			chips = append(chips, *posed)
+		}
+		if solved := s.issueChip(lang, addr, t.Solved, front.SolvedIn, front.SolvedPages); solved != nil {
+			chips = append(chips, *solved)
+		} else {
+			chips = append(chips, link{Text: t.NoSolution})
+		}
 		if front.Tag != "" {
-			tag = map[string]string{
-				"Href":  "../../tags/" + string(front.Tag) + ".html",
-				"Title": string(front.Tag),
-			}
+			chips = append(chips, link{Href: href(addr, tagURL(string(front.Tag))), Text: t.Tag + " " + string(front.Tag), Kicker: "tag"})
 		}
-		if err := s.emit(href, problemTmpl, map[string]any{
-			"Title":   title,
-			"Authors": strings.Join(front.Authors, ", "),
-			"Posed":   posed,
-			"Solved":  solved,
-			"Tag":     tag,
-			"Body":    template.HTML(html), //nolint:gosec // escaped by the renderer, checked by Guard
-			"Root":    "../../",
-		}); err != nil {
-			return 0, err
+		title := t.ProblemTitle(id.String())
+		p := s.frame(lang, addr, title)
+		p.Crumbs = s.crumbs(lang, addr, problemsURL(lang), t.Problems)
+		p.Data = struct {
+			IndexHref, Authors string
+			Chips              []link
+			Body               template.HTML
+		}{href(addr, problemsURL(lang)), strings.Join(front.Authors, ", "), chips,
+			template.HTML(html)} //nolint:gosec // escaped by the renderer, checked by Guard
+		if err := s.emit(addr, problemTmpl, p); err != nil {
+			res.err = err
+			return res
 		}
-
-		key, keyErr := corpus.ParseIssueKey(front.PosedIn)
-		posedNote := front.PosedIn
-		if posed != nil {
-			posedNote = posed.Title
+		d := doc{Lang: lang, Kind: "problem", Addr: addr, Title: title, Authors: front.Authors, Tag: string(front.Tag), Pages: front.PosedPages}
+		if key, err := corpus.ParseIssueKey(front.PosedIn); err == nil {
+			d.Key = key
 		}
-		if front.SolvedIn == "" {
-			posedNote += ", решение не напечатано"
-		}
-		index = append(index, indexEntry{
-			Href:  strings.TrimPrefix(href, "problems/"),
-			Title: id.String(),
-			Note:  posedNote,
-		})
-		entry := doc{
-			Kind:    "problem",
-			Href:    href,
-			Title:   title,
-			Issue:   front.PosedIn,
-			Authors: front.Authors,
-			Tag:     string(front.Tag),
-			Pages:   front.PosedPages,
-			Text:    plain(body),
-		}
-		if keyErr == nil {
-			entry.Year, entry.Number = key.Year, key.Number
-		}
-		s.docs = append(s.docs, entry)
+		res.docs = append(res.docs, d)
 	}
-
-	return len(ids), s.emit("problems/index.html", listTmpl, map[string]any{
-		"Title": "Задачник «Кванта»",
-		"Lede":  "Задачи M и Ф под своими номерами. Условие и напечатанное решение выходили в разных номерах, поэтому задача стоит отдельно от них обоих.",
-		"Items": index,
-		"Root":  "../",
-	})
+	return res
 }
 
-// issueLink names an issue and links to it when the site has it.
+// issueChip names an issue and links to it when the site has it.
 //
 // A problem posed in an issue nobody has read yet still gets a page, so the
 // issue is named either way and only becomes a link when there is something on
 // the other end. Writing the link regardless would leave the site pointing at a
 // directory that is not there, which is exactly what CheckLinks is for.
-func issueLink(key, pages string, published map[string]bool, root string) *indexEntry {
+func (s *Site) issueChip(lang, from, what, key, pages string) *link {
 	if key == "" {
 		return nil
 	}
+	t := wordsFor(lang)
 	parsed, err := corpus.ParseIssueKey(key)
 	if err != nil {
-		return &indexEntry{Title: key, Note: pages}
+		return &link{Text: what + ": " + key}
 	}
-	entry := indexEntry{Title: fmt.Sprintf("Квант %d, №%s", parsed.Year, parsed.Number), Note: pages}
-	if published[key] {
-		entry.Href = fmt.Sprintf("%s%d/%s/index.html", root, parsed.Year, pad(parsed.Number))
+	text := what + ": " + t.IssueTitle(parsed.Year, parsed.Number)
+	if pages != "" {
+		text += ", " + t.PageLabel(pages)
 	}
-	return &entry
+	chip := &link{Text: text}
+	for _, l := range []string{lang, corpus.DefaultLang} {
+		if addr := issueURL(l, parsed); s.known[addr] {
+			chip.Href = href(from, addr)
+			break
+		}
+	}
+	return chip
+}
+
+// problemIndex writes the list of the problems in one language.
+func (s *Site) problemIndex(lang string) error {
+	t := wordsFor(lang)
+	index := problemsURL(lang)
+	bySubject := map[string][]link{}
+	for _, d := range s.docs[lang] {
+		if d.Kind != "problem" {
+			continue
+		}
+		id := strings.TrimPrefix(d.Addr, index)
+		note := d.where()
+		bySubject[id[:1]] = append(bySubject[id[:1]], link{Href: href(index, d.Addr), Text: id, Note: note, Sub: strings.Join(d.Authors, ", ")})
+	}
+	var groups []group
+	for _, subject := range []string{"M", "F"} {
+		if rows := bySubject[subject]; len(rows) > 0 {
+			groups = append(groups, group{ID: strings.ToLower(subject), Title: subject, Items: rows})
+		}
+	}
+	p := s.frame(lang, index, t.Problems)
+	p.Crumbs = s.crumbs(lang, index)
+	p.Data = listData{Lede: t.ProblemsLede, Letters: len(groups) > 1, Groups: groups}
+	return s.emit(index, listTmpl, p)
 }
 
 // alphabetical is a title with the punctuation in front of it taken off.

@@ -16,11 +16,11 @@ import (
 // not reached yet would be an empty page a reader clicked on for nothing.
 func TestTheRubricIndexHoldsTheSectionsThatHaveSomethingInThem(t *testing.T) {
 	_, out, _ := build(t)
-	index := read(t, out, "rubrics/index.html")
+	index := read(t, out, "ru/rubrics/index.html")
 
 	for _, want := range []string{
-		`href="osnovnye-stati.html"`, "Основные статьи",
-		`href="matematicheskiy-kruzhok.html"`, "Математический кружок",
+		`href="../../ru/rubrics/osnovnye-stati"`, "Основные статьи",
+		`href="../../ru/rubrics/matematicheskiy-kruzhok"`, "Математический кружок",
 	} {
 		if !strings.Contains(index, want) {
 			t.Errorf("the rubric index has no %s in it", want)
@@ -30,7 +30,7 @@ func TestTheRubricIndexHoldsTheSectionsThatHaveSomethingInThem(t *testing.T) {
 		t.Error("the rubric index lists a section nothing in this corpus is under")
 	}
 
-	section := read(t, out, "rubrics/osnovnye-stati.html")
+	section := read(t, out, "ru/rubrics/osnovnye-stati.html")
 	if !strings.Contains(section, "Начало") {
 		t.Error("the section page does not list the article that ran under it")
 	}
@@ -43,15 +43,15 @@ func TestTheRubricIndexHoldsTheSectionsThatHaveSomethingInThem(t *testing.T) {
 // person wrote, across every year they wrote it.
 func TestAnAuthorPageGathersTheirWorkFromEveryIssue(t *testing.T) {
 	_, out, _ := build(t)
-	page := read(t, out, "authors/i-ivanov.html")
+	page := read(t, out, "ru/authors/i-ivanov.html")
 
-	for _, want := range []string{"Начало", "Продолжение", "1975, №4", "1976, №1"} {
+	for _, want := range []string{"Начало", "Продолжение", "1975 · 4", "1976 · 1"} {
 		if !strings.Contains(page, want) {
 			t.Errorf("the author page has no %s in it", want)
 		}
 	}
 
-	solo := read(t, out, "authors/p-petrov.html")
+	solo := read(t, out, "ru/authors/p-petrov.html")
 	if strings.Contains(solo, "Начало") {
 		t.Error("the author page lists an article this person did not write")
 	}
@@ -61,12 +61,13 @@ func TestAnAuthorPageGathersTheirWorkFromEveryIssue(t *testing.T) {
 // nothing points at is an index nobody finds.
 func TestAnArticleLinksToItsAuthorItsSectionAndItsTag(t *testing.T) {
 	_, out, _ := build(t)
-	article := read(t, out, "1975/04/articles/01_nachalo.html")
+	article := read(t, out, "ru/1975/04/01_nachalo.html")
 
 	for _, want := range []string{
-		`href="../../../authors/i-ivanov.html"`,
-		`href="../../../rubrics/osnovnye-stati.html"`,
-		`href="../../../tags/ZSAK.html"`,
+		`href="../../../ru/authors/i-ivanov"`,
+		`href="../../../ru/rubrics/osnovnye-stati"`,
+		`href="../../../tags/Z#ZSAK"`,
+		`href="../../../ru/1975/04/pages#p11"`,
 	} {
 		if !strings.Contains(article, want) {
 			t.Errorf("the article does not carry %s", want)
@@ -76,27 +77,24 @@ func TestAnArticleLinksToItsAuthorItsSectionAndItsTag(t *testing.T) {
 
 // A tag is a permanent address and the path of the thing it names is not: the
 // file carries a slug made out of the title, and a retitled article moves. So
-// the tag gets a page of its own that points at wherever the object is now.
+// the tag gets a row of its own that points at wherever the object is now.
+// The rows are split on the first character, because the corpus already has
+// five and a half thousand tags and a file for each is a file budget spent on
+// nothing, and one page of them all is not a page.
 func TestATagIsAPermanentAddressForWhateverItNames(t *testing.T) {
 	_, out, _ := build(t)
-	page := read(t, out, "tags/ZSAK.html")
-
-	if !strings.Contains(page, `href="../1975/04/articles/01_nachalo.html"`) {
-		t.Error("the tag page does not point at the article it names")
-	}
-	if !strings.Contains(page, "Начало") {
-		t.Error("the tag page does not say what it names")
-	}
-
-	// The index is split on the first character, because the corpus already has
-	// five and a half thousand tags and one page of them is not a page.
-	index := read(t, out, "tags/index.html")
-	if !strings.Contains(index, `href="Z.html"`) {
-		t.Error("the tag index does not reach the tags starting with Z")
-	}
 	shard := read(t, out, "tags/Z.html")
-	if !strings.Contains(shard, `href="ZSAK.html"`) {
-		t.Error("the shard does not list the tag that belongs in it")
+
+	if !strings.Contains(shard, `id="ZSAK" data-go="../ru/1975/04/01_nachalo"`) {
+		t.Error("the tag row does not point at the article it names")
+	}
+	if !strings.Contains(shard, "Начало") {
+		t.Error("the tag row does not say what it names")
+	}
+
+	index := read(t, out, "tags/index.html")
+	if !strings.Contains(index, `href="../tags/Z"`) {
+		t.Error("the tag index does not reach the tags starting with Z")
 	}
 	if strings.Contains(shard, "Q7T2") {
 		t.Error("the shard lists a tag that starts with something else")
@@ -134,15 +132,15 @@ func TestATagOnTwoThingsStopsTheBuild(t *testing.T) {
 // path.
 func TestAProblemStandsOnItsNumberAndLinksBothOfItsIssues(t *testing.T) {
 	_, out, _ := build(t)
-	page := read(t, out, "problems/m/0301.html")
+	page := read(t, out, "ru/problems/M301.html")
 
 	for _, want := range []string{
 		"Задача M301",
-		`href="../../1975/04/index.html"`,
-		`href="../../1975/10/index.html"`,
+		`href="../../ru/1975/04/"`,
+		`href="../../ru/1975/10/"`,
 		"41-42", "51-53",
 		"С. Охитин",
-		`href="../../tags/0IZG.html"`,
+		`href="../../tags/0#0IZG"`,
 	} {
 		if !strings.Contains(page, want) {
 			t.Errorf("the problem page has no %s in it", want)
@@ -156,15 +154,15 @@ func TestAProblemStandsOnItsNumberAndLinksBothOfItsIssues(t *testing.T) {
 // is not there.
 func TestAProblemFromAnIssueNobodyHasReadNamesItWithoutLinkingIt(t *testing.T) {
 	_, out, _ := build(t)
-	page := read(t, out, "problems/f/0372.html")
+	page := read(t, out, "ru/problems/F372.html")
 
 	if !strings.Contains(page, "Квант 1988, №11-12") {
 		t.Error("the problem page does not say which issue posed it")
 	}
-	if strings.Contains(page, `href="../../1988/`) {
+	if strings.Contains(page, `href="../../ru/1988/`) {
 		t.Error("the problem page links an issue the site does not have")
 	}
-	if strings.Contains(page, "решение:") {
+	if strings.Contains(page, "Решение:") {
 		t.Error("the problem page claims a solution the magazine never printed")
 	}
 }
@@ -222,88 +220,45 @@ func TestTheLinkCheckerFindsALinkThatGoesNowhere(t *testing.T) {
 	}
 }
 
-// The site has no JavaScript and is not going to grow any, so the index is
-// shipped as a file rather than wired into a page. Building it is the hard half
-// of search and it is done once, here, where every document is already open.
+// Building the index is the hard half of search and it is done once, here,
+// where every document is already open. It holds titles, authors, sections and
+// tags and no body text, because the bodies were twenty megabytes of download
+// for a lookup that is nearly always by title or by author.
 func TestTheSearchIndexHoldsEveryDocumentTheSitePublished(t *testing.T) {
 	_, out, stats := build(t)
 
 	var index struct {
-		Count   int `json:"count"`
-		Records []struct {
-			Kind    string   `json:"kind"`
-			Href    string   `json:"href"`
-			Title   string   `json:"title"`
-			Year    int      `json:"year"`
-			Authors []string `json:"authors"`
-			Rubric  string   `json:"rubric"`
-			Tag     string   `json:"tag"`
-			Text    string   `json:"text"`
-		} `json:"records"`
+		Count   int              `json:"count"`
+		Records []publish.Record `json:"records"`
 	}
-	if err := json.Unmarshal([]byte(read(t, out, "search.json")), &index); err != nil {
+	raw := read(t, out, "ru/search.json")
+	if err := json.Unmarshal([]byte(raw), &index); err != nil {
 		t.Fatal(err)
 	}
 
-	want := stats.Articles + stats.Pages + stats.Problems
+	want := stats.Articles + stats.Problems
 	if index.Count != want || len(index.Records) != want {
 		t.Fatalf("the index holds %d records, want %d", index.Count, want)
 	}
 
-	byHref := map[string]int{}
-	for i, r := range index.Records {
-		byHref[r.Href] = i
+	byHref := map[string]publish.Record{}
+	for _, r := range index.Records {
+		byHref[r.H] = r
 	}
-	at, ok := byHref["1975/04/articles/01_nachalo.html"]
+	got, ok := byHref["ru/1975/04/01_nachalo"]
 	if !ok {
-		t.Fatal("the article is not in the index")
+		t.Fatalf("the article is not in the index: %v", index.Records)
 	}
-	got := index.Records[at]
-	if got.Kind != "article" || got.Title != "Начало" || got.Year != 1975 {
+	if got.K != "a" || got.T != "Начало" || got.I != "1975 · 4" {
 		t.Errorf("the article record is %+v", got)
 	}
-	if got.Rubric != "osnovnye-stati" || got.Tag != "ZSAK" {
-		t.Errorf("the article record lost its section or its tag: %+v", got)
+	if got.R != "Основные статьи" || got.G != "ZSAK" || got.A != "И. Иванов" {
+		t.Errorf("the article record lost its section, tag or author: %+v", got)
 	}
-	if len(got.Authors) != 1 || got.Authors[0] != "И. Иванов" {
-		t.Errorf("the article record lost its author: %+v", got)
+	if p, ok := byHref["ru/problems/M301"]; !ok || p.K != "p" {
+		t.Errorf("the problems are not in the index: %+v", p)
 	}
-	// The mathematics is dropped rather than kept as TeX, because \frac{a}{b}
-	// is not a word anybody searches for and it would fill the snippet of a
-	// mathematical article with backslashes instead of its subject.
-	if !strings.Contains(got.Text, "Текст статьи") {
-		t.Errorf("the snippet does not hold the opening of the body: %q", got.Text)
-	}
-	if strings.Contains(got.Text, `\int`) {
-		t.Errorf("the snippet carries TeX: %q", got.Text)
-	}
-
-	if _, ok := byHref["problems/m/0301.html"]; !ok {
-		t.Error("the problems are not in the index")
-	}
-
-	// A sheet is in the index and in no other view. It has no author and no
-	// rubric, because those are properties of what the magazine printed and a
-	// sheet is a side of paper, but it is where anything no article claimed
-	// survives, so leaving it out would make those pieces unfindable.
-	sheet, ok := byHref["1975/04/pages/0011.html"]
-	if !ok {
-		t.Fatal("the sheets are not in the index")
-	}
-	// The reading marks are the reading's notes to itself and are not words
-	// anybody searches for.
-	if text := index.Records[sheet].Text; strings.Contains(text, "folio") || strings.Contains(text, "⟦") {
-		t.Errorf("the snippet carries a reading mark: %q", text)
-	}
-
-	long := index.Records[byHref["1975/04/pages/0013.html"]].Text
-	if len([]rune(long)) > 401 {
-		t.Errorf("the snippet was not cut: %d runes", len([]rune(long)))
-	}
-	if !strings.HasSuffix(long, "…") {
-		t.Errorf("a cut snippet does not say it was cut: %q", long)
-	}
-	if strings.HasSuffix(long, " …") {
-		t.Errorf("the cut left the space before the ellipsis: %q", long)
+	if strings.Contains(raw, "Текст статьи") {
+		t.Error("the index carries body text")
 	}
 }

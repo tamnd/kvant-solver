@@ -3,6 +3,7 @@ package publish_test
 import (
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -160,23 +161,31 @@ func TestASiteIsBuiltOutOfWhatWasRead(t *testing.T) {
 
 	for _, name := range []string{
 		"index.html",
-		"1975/index.html",
-		"1975/04/index.html",
-		"1975/04/pages/0011.html",
-		"1975/04/articles/01_nachalo.html",
-		"1975/10/pages/0003.html",
-		"1976/01/index.html",
-		"rubrics/index.html",
-		"rubrics/osnovnye-stati.html",
-		"authors/index.html",
-		"authors/i-ivanov.html",
-		"problems/index.html",
-		"problems/m/0301.html",
-		"problems/f/0372.html",
+		"404.html",
+		"robots.txt",
+		"sitemap.xml",
+		"_headers",
+		"ru/index.html",
+		"ru/1975/index.html",
+		"ru/1975/04/index.html",
+		"ru/1975/04/pages.html",
+		"ru/1975/04/01_nachalo.html",
+		"ru/1975/10/pages.html",
+		"ru/1976/01/index.html",
+		"ru/rubrics/index.html",
+		"ru/rubrics/osnovnye-stati.html",
+		"ru/authors/index.html",
+		"ru/authors/i-ivanov.html",
+		"ru/problems/index.html",
+		"ru/problems/M301.html",
+		"ru/problems/F372.html",
+		"ru/search.html",
+		"ru/search.json",
 		"tags/index.html",
-		"tags/ZSAK.html",
-		"search.json",
+		"tags/Z.html",
 		"assets/site.css",
+		"assets/site.js",
+		"assets/theme.js",
 		"assets/katex.min.css",
 	} {
 		if _, err := os.Stat(filepath.Join(out, filepath.FromSlash(name))); err != nil {
@@ -190,12 +199,11 @@ func TestASiteIsBuiltOutOfWhatWasRead(t *testing.T) {
 // was printed on, and a site that listed articles alone would lose it.
 func TestTheIssuePageListsBothTheArticlesAndTheSheets(t *testing.T) {
 	_, out, _ := build(t)
-	page := read(t, out, "1975/04/index.html")
+	page := read(t, out, "ru/1975/04/index.html")
 
 	for _, want := range []string{
-		`href="articles/01_nachalo.html"`, "Начало",
-		`href="pages/0011.html"`, "Лист 11",
-		`href="pages/0012.html"`, "Лист 12",
+		`href="../../../ru/1975/04/01_nachalo"`, "Начало",
+		`href="../../../ru/1975/04/pages"`, "3 страницы",
 		// The file records the slug the assembler gave it. A reader is shown the
 		// section the way the magazine printed it.
 		"Основные статьи",
@@ -211,22 +219,25 @@ func TestTheIssuePageListsBothTheArticlesAndTheSheets(t *testing.T) {
 // than showing an empty heading.
 func TestAnIssueWithNoArticlesStillPublishesItsSheets(t *testing.T) {
 	_, out, _ := build(t)
-	page := read(t, out, "1975/10/index.html")
+	page := read(t, out, "ru/1975/10/index.html")
 
-	if !strings.Contains(page, `href="pages/0003.html"`) {
+	if !strings.Contains(page, `href="../../../ru/1975/10/pages"`) {
 		t.Error("the issue page does not link the sheet that was read")
 	}
-	if !strings.Contains(page, "номер ещё не разобран на статьи") {
+	if !strings.Contains(read(t, out, "ru/1975/10/pages.html"), `id="p3"`) {
+		t.Error("the sheets page does not hold the sheet that was read")
+	}
+	if !strings.Contains(page, "Номер ещё не разобран на статьи") {
 		t.Error("the issue page says nothing about having no articles")
 	}
 }
 
-// The mathematics is typeset at build time and not in the browser, which is the
-// whole reason the site needs no JavaScript.
+// The mathematics is typeset at build time and not in the browser, so a reader
+// with scripting off still sees every formula.
 func TestTheMathematicsIsTypesetIntoTheFile(t *testing.T) {
 	_, out, _ := build(t)
 
-	sheet := read(t, out, "1975/04/pages/0011.html")
+	sheet := read(t, out, "ru/1975/04/pages.html")
 	if !strings.Contains(sheet, "katex") {
 		t.Error("the inline formula was not typeset")
 	}
@@ -234,7 +245,7 @@ func TestTheMathematicsIsTypesetIntoTheFile(t *testing.T) {
 		t.Error("the TeX source is still on the page")
 	}
 
-	article := read(t, out, "1975/04/articles/01_nachalo.html")
+	article := read(t, out, "ru/1975/04/01_nachalo.html")
 	if !strings.Contains(article, "katex-display") {
 		t.Error("the display formula was not typeset as a display")
 	}
@@ -246,9 +257,9 @@ func TestTheMathematicsIsTypesetIntoTheFile(t *testing.T) {
 // repository to tell them apart.
 func TestASheetSaysHowItWasRead(t *testing.T) {
 	_, out, _ := build(t)
-	sheet := read(t, out, "1975/04/pages/0011.html")
+	sheet := read(t, out, "ru/1975/04/pages.html")
 
-	for _, want := range []string{"vision", "gpt-5", "27"} {
+	for _, want := range []string{"Набрано по скану", "gpt-5", "с. 27"} {
 		if !strings.Contains(sheet, want) {
 			t.Errorf("the sheet does not say %s", want)
 		}
@@ -346,7 +357,7 @@ func TestABrokenFormulaIsMarkedAndCountedRatherThanFatal(t *testing.T) {
 		t.Errorf("counted %d broken formulas, want 1", stats.BadMath)
 	}
 
-	sheet := read(t, out, "1975/04/pages/0011.html")
+	sheet := read(t, out, "ru/1975/04/pages.html")
 	if !strings.Contains(sheet, "обычный текст") {
 		t.Error("the rest of the page went missing with the formula")
 	}
@@ -375,12 +386,13 @@ func TestPublishingACorpusWithNothingInItIsAnError(t *testing.T) {
 	}
 }
 
-// Nothing on the site needs a browser to run anything, and that is a
-// requirement of the milestone rather than a preference. A reader with
-// scripting off sees the finished article, the typeset mathematics and every
-// link.
-func TestThereIsNoJavaScriptAnywhereOnTheSite(t *testing.T) {
+// Everything a reader needs is in the HTML: the article, the typeset
+// mathematics and every link. The two scripts the site has, the theme and the
+// search, are its own files, and nothing on a page runs code inline or fetches
+// code from somewhere else.
+func TestTheOnlyScriptsAreTheSitesOwn(t *testing.T) {
 	_, out, _ := build(t)
+	own := regexp.MustCompile(`<script (?:defer )?src="[a-z0-9./_-]*assets/(?:site|theme)\.js"></script>`)
 
 	err := filepath.Walk(out, func(path string, info os.FileInfo, err error) error {
 		if err != nil || info.IsDir() || filepath.Ext(path) != ".html" {
@@ -390,8 +402,9 @@ func TestThereIsNoJavaScriptAnywhereOnTheSite(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		for _, bad := range []string{"<script", "onclick", "javascript:"} {
-			if strings.Contains(strings.ToLower(string(data)), bad) {
+		page := strings.ToLower(own.ReplaceAllString(string(data), ""))
+		for _, bad := range []string{"<script", "onclick", "onload", "javascript:"} {
+			if strings.Contains(page, bad) {
 				t.Errorf("%s carries %s", path, bad)
 			}
 		}

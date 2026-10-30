@@ -2,7 +2,9 @@ package publish
 
 import (
 	"fmt"
+	"path"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 )
@@ -36,7 +38,27 @@ var allowedExt = map[string]string{
 	".woff2": "a vendored font",
 	".json":  "the search index",
 	".txt":   "a plain text file",
+	".xml":   "the sitemap",
+	".js":    "the site's own script",
 }
+
+// scripts is the whole of the JavaScript the site may carry: its own two
+// files, which it wrote, and nothing anybody else did.
+var scripts = map[string]bool{
+	"assets/site.js":  true,
+	"assets/theme.js": true,
+}
+
+// bare are the files a host reads by name, which have no extension to judge
+// them by.
+var bare = map[string]bool{
+	"_headers": true,
+}
+
+// ownScript is the tag a page loads one of the site's two scripts with. It is
+// the one script element the guard lets through, and only pointing at those
+// two files, so that a body cannot smuggle in a third.
+var ownScript = regexp.MustCompile(`<script (?:defer )?src="(?:\.\./|\./|/[a-z0-9._/-]*)*assets/(?:site|theme)\.js"></script>`)
 
 // fetchers are the elements that make a browser go and get something. An empty
 // output cannot contain one, which is easy to check and easy to keep true.
@@ -58,7 +80,13 @@ var scanExt = []string{
 // happens before the write and not after it. A guard that runs over the built
 // site can only tell you that you have already published the thing.
 func Guard(name string, data []byte) error {
+	if bare[name] {
+		return nil
+	}
 	ext := strings.ToLower(filepath.Ext(name))
+	if ext == ".js" && !scripts[path.Clean(name)] {
+		return fmt.Errorf("%s: the only scripts on the site are its own", name)
+	}
 	if _, ok := allowedExt[ext]; !ok {
 		return fmt.Errorf("%s: the site is made of text and %s is not one of %s",
 			name, quoteExt(ext), strings.Join(extList(), ", "))
@@ -67,7 +95,7 @@ func Guard(name string, data []byte) error {
 		return nil
 	}
 
-	page := strings.ToLower(string(data))
+	page := ownScript.ReplaceAllString(strings.ToLower(string(data)), "")
 	for _, tag := range fetchers {
 		if strings.Contains(page, tag) {
 			return fmt.Errorf("%s: %s> would send the reader off to fetch something", name, tag)
@@ -91,7 +119,7 @@ func Guard(name string, data []byte) error {
 // references pulls out everything the page points at.
 func references(page string) []string {
 	var out []string
-	for _, opener := range []string{`href="`, `href='`, "url("} {
+	for _, opener := range []string{`href="`, `href='`, `src="`, "url("} {
 		rest := page
 		for {
 			_, after, found := strings.Cut(rest, opener)
