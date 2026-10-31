@@ -293,6 +293,14 @@ var protects = []protect{
 // out before it sees them. Vietnamese does not inflect, which is what makes
 // this safe there.
 var draftTerms = map[string][]protect{
+	"en": {
+		term(`[Рр]ис\.`, "Fig."),
+		term(`[Рр]исун(?:ок|ка|ку|ке|ком|ки|ков|кам|ками|ках)`, "figure"),
+	},
+	"zh": {
+		term(`[Рр]ис\.`, "图"),
+		term(`[Рр]исун(?:ок|ка|ку|ке|ком|ки|ков|кам|ками|ках)`, "图"),
+	},
 	"vi": {
 		term(`[Зз]адачник[а-я]*\s+«Кванта»`, "Bài toán Kvant"),
 		term(`«Квант[а-я]*»\s+для\s+младших\s+школьников`, "«Kvant» cho học sinh nhỏ"),
@@ -319,7 +327,7 @@ func term(pattern, put string) protect {
 	}}
 }
 
-var problemWord = map[string]string{"en": "Problem", "vi": "Bài toán"}
+var problemWord = map[string]string{"en": "Problem", "vi": "Bài toán", "zh": "习题"}
 
 // segment masks one run of prose.
 func (d *drafter) segment(text string, math [][2]int) *draftSeg {

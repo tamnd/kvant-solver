@@ -20,7 +20,7 @@ const marker = "⟦figure⟧"
 
 // caption is a line that starts a figure caption in Russian, in the languages
 // the corpus is translated into, or as the reading sometimes spells it.
-var caption = regexp.MustCompile(`^\s*(?:Рис|Рисунок|Hình|Fig|Figure)\.?\s*(\d+)`)
+var caption = regexp.MustCompile(`^\s*(?:Рис|Рисунок|Hình|Fig|Figure|图)\.?\s*(\d+)`)
 
 // Anchors finds the anchors in a page or an article body, in order.
 func Anchors(body string) []Anchor {
