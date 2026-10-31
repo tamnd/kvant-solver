@@ -9,6 +9,8 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+
+	"github.com/tamnd/kvant-solver/figures"
 )
 
 // The link checker runs over the finished directory, which is the one place the
@@ -58,8 +60,9 @@ var notOurs = map[string]bool{
 }
 
 // offSite is the short list of places outside the site a page may point at:
-// the repositories the site is built from.
-var offSite = []string{"https://github.com/tamnd/"}
+// the repositories the site is built from, and the host the figures cut from
+// the scans are served from, which are too many files for the site itself.
+var offSite = []string{"https://github.com/tamnd/", figures.Base + "/"}
 
 // meta is the elements that name an address for search engines rather than
 // for readers. The canonical address and the same page in other languages are

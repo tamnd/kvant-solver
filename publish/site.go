@@ -50,6 +50,8 @@ type Site struct {
 	// was read. They are half the bytes of the site, and GitHub Pages stops at
 	// a gigabyte.
 	NoSheets bool
+
+	figs manifests
 	// NoDrafts leaves out every translated file that is still a rough draft,
 	// for a host too small to carry a whole second language of them.
 	NoDrafts bool
@@ -598,7 +600,7 @@ func (s *Site) issue(r *Renderer, lang string, key corpus.IssueKey) result {
 	}
 
 	for i, v := range views {
-		html, bad, err := r.Render(v.body)
+		html, bad, err := r.Render(s.placeFigures(lang, key, v.front, v.body))
 		if err != nil {
 			res.err = fmt.Errorf("%s/%s/articles/%s: %w", lang, where, v.name, err)
 			return res

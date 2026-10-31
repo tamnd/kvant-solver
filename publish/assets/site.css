@@ -198,6 +198,8 @@ a.chip:hover { text-decoration: none; background: var(--accent-soft); color: var
 .mark.figure::before { content: "Рисунок"; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; font-size: .7rem; margin-right: .5rem; }
 :lang(en) .mark.figure::before { content: "Figure"; }
 :lang(vi) .mark.figure::before { content: "Hình"; }
+figure.scan { margin: 1.2rem 0; display: flex; flex-wrap: wrap; gap: .8rem; align-items: flex-start; }
+figure.scan img { max-width: 100%; height: auto; border-radius: 2px; }
 .mark.figure:empty::before { margin-right: 0; }
 .mark.column, .mark.rubric { display: block; height: .6rem; }
 .mark.folio { float: right; margin: .2rem 0 .5rem 1rem; font-size: .72rem; padding: .15rem .45rem; background: var(--surface); }

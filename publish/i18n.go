@@ -42,13 +42,13 @@ type words struct {
 	NotChecked                                     string
 	// Draft is the warning on a rough automatic pass, and DraftShort is the
 	// same said in a few words for the line under a sheet.
-	Draft, DraftShort string
-	Tag, TagLede, TagIndexLede, TagLookup          string
-	RubricsLede, AuthorsLede, ProblemsLede         string
-	SignedAlso                                     string
-	Posed, Solved, NoSolution                      string
-	ChooseLanguage, NotFound, NotFoundLede         string
-	Source                                         string
+	Draft, DraftShort                      string
+	Tag, TagLede, TagIndexLede, TagLookup  string
+	RubricsLede, AuthorsLede, ProblemsLede string
+	SignedAlso                             string
+	Posed, Solved, NoSolution              string
+	ChooseLanguage, NotFound, NotFoundLede string
+	Source                                 string
 
 	// issue and friends are formats rather than words, because the order of
 	// the parts is not the same in every language.
