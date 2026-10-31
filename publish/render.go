@@ -103,7 +103,7 @@ func (r *Renderer) Render(body string) (string, []BadMath, error) {
 	if err != nil {
 		return "", nil, err
 	}
-	return markers(out), bad, nil
+	return figureMarkup(markers(out)), bad, nil
 }
 
 // The sentinel a hidden span leaves behind, in the private use area.

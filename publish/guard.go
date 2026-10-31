@@ -95,7 +95,11 @@ func Guard(name string, data []byte) error {
 		return nil
 	}
 
-	page := ownScript.ReplaceAllString(strings.ToLower(string(data)), "")
+	// The figures cut from the scans are the one exception, made on purpose:
+	// an img tag exactly as figureMarkup writes it, pointing at a crop on the
+	// figure host, and no other.
+	page := ownFigure.ReplaceAllString(string(data), "")
+	page = ownScript.ReplaceAllString(strings.ToLower(page), "")
 	for _, tag := range fetchers {
 		if strings.Contains(page, tag) {
 			return fmt.Errorf("%s: %s> would send the reader off to fetch something", name, tag)
