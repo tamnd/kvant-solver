@@ -96,6 +96,10 @@ type Options struct {
 	// was a lexicon, counting every one of them, which is what a corpus with no
 	// lexicon built for it should get.
 	Lexicon *lexicon.Lexicon
+	// MinChars replaces the MinChars of rule 1 when it is above zero. A repair
+	// pass aimed at sheets known to be title pages under a large picture sets it
+	// lower, because those carry a title, a byline and a caption and no column.
+	MinChars int
 }
 
 // TeXChecker parses a fragment and reports what went wrong. Behind an interface
@@ -133,10 +137,14 @@ func Validate(text string, expect Expect, options Options) []Problem {
 	}
 
 	// Rule 1.
-	if !expect.Cover && !Plate(body) && len([]rune(body)) < MinChars {
+	least := MinChars
+	if options.MinChars > 0 {
+		least = options.MinChars
+	}
+	if !expect.Cover && !Plate(body) && len([]rune(body)) < least {
 		problems = append(problems, Problem{
 			Rule:   RuleShort,
-			Detail: fmt.Sprintf("%d characters, want at least %d", len([]rune(body)), MinChars),
+			Detail: fmt.Sprintf("%d characters, want at least %d", len([]rune(body)), least),
 		})
 	}
 

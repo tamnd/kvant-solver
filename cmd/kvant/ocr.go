@@ -33,6 +33,7 @@ func runOCR(args []string) error {
 	checkTeX := fs.Bool("latex", true, "run every formula through KaTeX before accepting a page")
 	ledgerPath := fs.String("ledger", "", "where the cost ledger is appended, cache/ledger/ocr.jsonl by default")
 	noLedger := fs.Bool("no-ledger", false, "do not record what the run cost")
+	minChars := fs.Int("min-chars", 0, "accept pages this short, for a repair pass over title pages (default ocr.MinChars)")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -66,7 +67,7 @@ func runOCR(args []string) error {
 		return err
 	}
 
-	options := ocr.Options{}
+	options := ocr.Options{MinChars: *minChars}
 	// The lexicon of the corpus being written into, so that rule 8 asks about
 	// the words this archive uses. A corpus with none gets the rule as it was.
 	lex, err := lexicon.Open(c.Root)
