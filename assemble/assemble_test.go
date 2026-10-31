@@ -237,3 +237,57 @@ func TestThePublisherSlugWins(t *testing.T) {
 		t.Fatalf("slug is %q, want the publisher's", got.Articles[0].Slug)
 	}
 }
+
+// A piece that starts under the end of the last one: 1970 №1, where Born's
+// relativity starts below the last four problems of «Сухое трение».
+func TestAnArticleStartingMidPageTakesOnlyItsOwnPart(t *testing.T) {
+	pages := issue(t, 8)
+	pages[4].Body = "⟦folio 3⟧\n\nТрение мешает и помогает. Задачи.\n\n4. Брусок лежит на доске, наклоненной к горизонту."
+	pages[5].Body = "⟦folio 4⟧\n\n5. Оборвавшиеся при бурении трубы можно поднимать с помощью устройства, показанного на рисунке.\n\n" +
+		"8. Почему скрипит плохо смазанная дверь?\n\nМАКС БОРН\nОБЫЯСНЯЕТ ТЕОРИЮ\nОТНОСИТЕЛЬНОСТИ\n\nОдна дама попросила Макса Борна разъяснить ей теорию относительности."
+	rows := []manifest.Row{
+		{Title: "Сухое трение", Page: 3},
+		{Title: "Макс Борн объясняет теорию относительности", Page: 4},
+	}
+	got := assemble.Issue(key(t), rows, pages)
+	if len(got.Articles) != 2 {
+		t.Fatalf("got %d articles", len(got.Articles))
+	}
+	friction, born := got.Articles[0], got.Articles[1]
+	if !strings.Contains(friction.Body, "скрипит") || strings.Contains(friction.Body, "БОРН") {
+		t.Errorf("the problems should end with their own last problem:\n%s", friction.Body)
+	}
+	if friction.Last != 6 || friction.Labels != "3-4" {
+		t.Errorf("the problems end on page %d, labels %q, want 6 and 3-4", friction.Last, friction.Labels)
+	}
+	if strings.Contains(born.Body, "скрипит") || !strings.HasPrefix(born.Body, "⟦folio 4⟧\n\nМАКС БОРН") {
+		t.Errorf("Born should open with his folio and his heading:\n%s", born.Body)
+	}
+	if born.First != 6 {
+		t.Errorf("Born starts on page %d, want 6", born.First)
+	}
+}
+
+// The byline and a banner over the heading go with the article, and a page
+// that opens with its heading is not cut at all.
+func TestTheBylineGoesWithTheHeading(t *testing.T) {
+	pages := issue(t, 6)
+	pages[3].Body = "Конец предыдущей статьи, в котором довольно много слов, чтобы это был настоящий хвост, а не колонтитул страницы.\n\n" +
+		"Наш календарь\n\nА. Иванов\n\nФормула Бальмера\n\nТекст."
+	pages[4].Body = "Задачи\n\nМ356—М360\n\nМ356. Докажите."
+	rows := []manifest.Row{
+		{Title: "Первая", Page: 1},
+		{Title: "Формула Бальмера", Authors: "А. Иванов", Page: 2},
+		{Title: "Задачи M356—M360", Page: 3},
+	}
+	got := assemble.Issue(key(t), rows, pages)
+	if body := got.Articles[1].Body; !strings.HasPrefix(body, "Наш календарь\n\nА. Иванов") {
+		t.Errorf("the banner and byline should open the article:\n%s", body)
+	}
+	if body := got.Articles[0].Body; !strings.HasSuffix(body, "колонтитул страницы.") {
+		t.Errorf("the tail should end the first article:\n%s", body)
+	}
+	if got.Articles[1].Last != 4 || strings.Contains(got.Articles[1].Body, "М356") {
+		t.Errorf("a page opening with its heading should not be shared: %+v", got.Articles[1].Pages)
+	}
+}
