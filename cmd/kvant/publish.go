@@ -20,6 +20,7 @@ func runPublish(args []string) error {
 	siteURL := fs.String("site-url", publish.DefaultSiteURL, "where the site will be served from")
 	canonical := fs.String("canonical-url", "", "the copy every page names as the real one (default --site-url)")
 	noSheets := fs.Bool("no-sheets", false, "leave out the pages that show every sheet of an issue")
+	noDrafts := fs.Bool("no-drafts", false, "leave out translations that are still rough drafts")
 	workers := fs.Int("workers", 0, "how many issues to render at once (default one per CPU)")
 	maxFiles := fs.Int("max-files", 0, "fail if the site is more files than this")
 	maxMB := fs.Int64("max-mb", 0, "fail if the site is more megabytes than this")
@@ -52,7 +53,7 @@ func runPublish(args []string) error {
 	}
 	site := &publish.Site{
 		Corpus: c, Langs: langs, Out: *out, Strict: *strict,
-		SiteURL: *siteURL, CanonicalURL: *canonical, NoSheets: *noSheets,
+		SiteURL: *siteURL, CanonicalURL: *canonical, NoSheets: *noSheets, NoDrafts: *noDrafts,
 		Workers: *workers, MaxFiles: *maxFiles, MaxBytes: *maxMB << 20,
 	}
 	if !*quiet {

@@ -259,10 +259,15 @@ func TestASheetSaysHowItWasRead(t *testing.T) {
 	_, out, _ := build(t)
 	sheet := read(t, out, "ru/1975/04/pages.html")
 
-	for _, want := range []string{"Набрано по скану", "gpt-5", "с. 27"} {
+	for _, want := range []string{"Набрано по скану", "с. 27"} {
 		if !strings.Contains(sheet, want) {
 			t.Errorf("the sheet does not say %s", want)
 		}
+	}
+	// The kind of reading is the reader's business; which model did it is
+	// the repository's, and stays in the front matter.
+	if strings.Contains(sheet, "gpt-5") {
+		t.Error("the sheet names the model that read it")
 	}
 }
 
