@@ -94,6 +94,20 @@ func TestTheFullStopMayFallOutsideTheEmphasis(t *testing.T) {
 	}
 }
 
+func TestANumberOnItsOwnLineOpensAProblem(t *testing.T) {
+	// The early seventies set the number as a heading of its own with the
+	// statement on the next line and no full stop at all. Asking for the stop
+	// lost every solution of 1971 and 1972 that was set this way.
+	body := "В этом номере мы публикуем решения задач М77—М78\n\nМ77\n\nДлины двух сторон треугольника равны 10 и 15.\n\nМ78\n\nВторое условие.\n"
+	items := Split(body, Solved)
+	if len(items) != 2 || items[0].ID.String() != "M77" || items[1].ID.String() != "M78" {
+		t.Fatalf("split gave %+v, want M77 and M78", items)
+	}
+	if items[1].Text != "Второе условие." {
+		t.Fatalf("M78 text is %q", items[1].Text)
+	}
+}
+
 func TestAProblemRunsUntilTheNextNumber(t *testing.T) {
 	body := "⟦folio 46⟧\n\nЗадачник «Кванта»\n\n" +
 		"М311. Первое условие.\nВторая строка первого условия.\n\n" +

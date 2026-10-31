@@ -59,7 +59,7 @@ type Item struct {
 // magazine sets the mathematics as **М301.** and the physics on the facing
 // page as **Ф313**., and a pattern that admits only the first silently drops
 // every physics problem in the archive while looking like it works.
-var marker = regexp.MustCompile(`(?m)^[ \t*_]*([МMФF])[ \t]?(\d{1,4})[ \t*_]*\.`)
+var marker = regexp.MustCompile(`(?m)^[ \t*_]*([МMФF])[ \t]?(\d{1,4})[ \t*_]*(?:\.|$)`)
 
 // subject maps a printed letter to its series. М and M are mathematics, Ф and F
 // are physics.

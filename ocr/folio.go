@@ -219,6 +219,13 @@ var digits = regexp.MustCompile(`\d+`)
 // after it at the inner corner of the first page of a gathering.
 var signature = regexp.MustCompile(`\d+\s*\*`)
 
+// link is a DOI or a web address in the band. From 2016 on the first page of an
+// article carries its DOI at the foot, «DOI: https://doi.org/10.4213/kvant...»,
+// and the 10 of the DOI prefix is a plausible page number to everything below.
+// Every such page came back as page 10 and was refused by rule 5, so every
+// article opening of the recent years failed to read.
+var link = regexp.MustCompile(`(?i)\bdoi:?|https?://\S*|\b10\.\d{4,}/\S*|\S+\.(?:org|ru|com)\S*`)
+
 // ParseFolio picks the printed number out of what came back from the band.
 //
 // The band is the full width of the page, so it can hold two numbers, and which
@@ -237,6 +244,7 @@ var signature = regexp.MustCompile(`\d+\s*\*`)
 // grows through the issue. It also leaves the colophon case alone, where the
 // year is already excluded for being over 128.
 func ParseFolio(answer string) (int, bool) {
+	answer = link.ReplaceAllString(answer, " ")
 	answer = signature.ReplaceAllString(answer, " ")
 	best, found := 0, false
 	for _, match := range digits.FindAllString(answer, -1) {

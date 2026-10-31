@@ -43,6 +43,7 @@ func runProblemsBuild(args []string) error {
 	lang := fs.String("lang", corpus.DefaultLang, "the tree to read")
 	write := fs.Bool("write", true, "write the problem files as well as the manifest")
 	dry := fs.Bool("dry-run", false, "print the counts and write nothing")
+	gaps := fs.String("gaps", "", "write every gap to this file, one line each, grouped by reason")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -71,6 +72,12 @@ func runProblemsBuild(args []string) error {
 		for _, g := range res.Gaps[:min(len(res.Gaps), 10)] {
 			fmt.Printf("  %s in %s: %s\n", g.ID, g.Issue, g.Reason)
 		}
+	}
+	if *gaps != "" {
+		if err := writeGaps(*gaps, res.Gaps); err != nil {
+			return err
+		}
+		fmt.Printf("wrote %d gaps to %s\n", len(res.Gaps), *gaps)
 	}
 	if *dry {
 		fmt.Println("dry run, nothing written")
@@ -215,4 +222,33 @@ func loadProblemArticles(c *corpus.Corpus, lang string) ([]problems.Article, err
 		}
 	}
 	return out, nil
+}
+
+// writeGaps puts the whole gap list where it can be read, since the summary
+// shows ten of what is usually hundreds. Grouping by reason first is what makes
+// it useful: an unread year, a misread number and a reprint call for different
+// work, and a list in issue order hides which of them dominates.
+func writeGaps(path string, gaps []problems.Gap) error {
+	byReason := map[string][]problems.Gap{}
+	var reasons []string
+	for _, g := range gaps {
+		key := g.Reason
+		if i := strings.Index(key, ", the "); i > 0 && strings.HasPrefix(key, "printed again") {
+			key = key[:i]
+		}
+		if _, ok := byReason[key]; !ok {
+			reasons = append(reasons, key)
+		}
+		byReason[key] = append(byReason[key], g)
+	}
+	sort.SliceStable(reasons, func(i, j int) bool { return len(byReason[reasons[i]]) > len(byReason[reasons[j]]) })
+	var b strings.Builder
+	fmt.Fprintf(&b, "# Задачник gaps\n\n%d gaps.\n", len(gaps))
+	for _, r := range reasons {
+		fmt.Fprintf(&b, "\n## %s (%d)\n\n", r, len(byReason[r]))
+		for _, g := range byReason[r] {
+			fmt.Fprintf(&b, "- %s %s in %s: %s\n", g.ID, g.Kind, g.Issue, g.Reason)
+		}
+	}
+	return os.WriteFile(path, []byte(b.String()), 0o644)
 }

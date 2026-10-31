@@ -173,6 +173,12 @@ func TestParseFolioTakesThePageNumberAndNotTheYear(t *testing.T) {
 		// the signature would place the page nineteen leaves from where it was
 		// printed.
 		{"2*", 0, false},
+		// The first page of an article from 2016 on carries its DOI at the
+		// foot, and the 10 of the prefix is not the folio. Sheet 14 of 2026 №8
+		// prints no number at all and came back as page 10 before this.
+		{"DOI: https://doi.org/10.4213/kvant20260802", 0, false},
+		{"DOI: 10.4213/kvant20260802", 0, false},
+		{"DOI: https://doi.org/10.4213/kvant20260802 13", 13, true},
 	}
 	for _, c := range cases {
 		got, found := ocr.ParseFolio(c.answer)
