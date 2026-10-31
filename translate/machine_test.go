@@ -165,6 +165,14 @@ func TestTheMagazinesOwnWordsComeBackAsTheModelSpellsThem(t *testing.T) {
 	}
 }
 
+func TestAFigureIsNotRice(t *testing.T) {
+	res := drafted(t, &fakeMachine{}, "Рис. 3. На рисунке 2 рис.")
+	want := "Hình 3. vi hình 2 hình"
+	if res.Body != want {
+		t.Fatalf("got %q, want %q", res.Body, want)
+	}
+}
+
 func TestAnIndentedLineKeepsItsFormulas(t *testing.T) {
 	m := &fakeMachine{}
 	body := "   Пусть $а=б$ и   $$в$$ тогда.  "
