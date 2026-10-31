@@ -242,14 +242,22 @@ func (s *Site) prepare() error {
 	s.shelves = map[string]*shelf{}
 	s.known = map[string]bool{"": true, tagsURL(): true}
 	s.docs = map[string][]doc{}
+	var kept []string
 	for _, lang := range s.Langs {
 		sh, err := s.shelf(lang)
 		if err != nil {
 			return err
 		}
 		if len(sh.issues) == 0 {
+			// A translation that is all drafts has nothing to show on a site
+			// built without them, and is left out of it rather than failing
+			// it. The original has no such excuse.
+			if lang != corpus.DefaultLang {
+				continue
+			}
 			return fmt.Errorf("%s holds no %s issues to publish", s.Corpus.Root, lang)
 		}
+		kept = append(kept, lang)
 		s.shelves[lang] = sh
 		for _, addr := range []string{langURL(lang), searchURL(lang), rubricsURL(lang), authorsURL(lang), problemsURL(lang)} {
 			s.known[addr] = true
@@ -270,6 +278,7 @@ func (s *Site) prepare() error {
 			s.known[problemURL(lang, id)] = true
 		}
 	}
+	s.Langs = kept
 	return nil
 }
 
