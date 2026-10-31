@@ -234,6 +234,57 @@ var languages = map[string]words{
 			return fmt.Sprintf("%d %s", n, noun)
 		},
 	},
+	"zh": {
+		Name:    "中文",
+		Brand:   "Kvant",
+		Tagline: "物理与数学科普杂志",
+		About:   "杂志自1970年以来的每一页：文章、习题栏、奥林匹克竞赛，以及其间刊登的一切。重新排版，公式重新排印，每篇文章都有固定的地址。",
+
+		Archive: "档案", Rubrics: "栏目", Authors: "作者", Problems: "习题", Tags: "标签", Search: "搜索",
+		SearchHint:  "标题、作者、栏目或标签",
+		SearchNoJS:  "搜索需要 JavaScript。没有它，整个档案仍可通过栏目、作者和各期访问。",
+		SearchEmpty: "请输入关键词。",
+		SearchNone:  "没有找到结果。",
+		Menu:        "菜单", Theme: "浅色或深色", Contents: "目录", OnThisPage: "本页内容", BackToTop: "回到顶部",
+		Skip: "跳到正文", Languages: "语言", Home: "首页",
+
+		Articles: "文章", Pages: "页面", AllPages: "本期所有页面", ReadPages: "本期页面",
+		NoArticles: "本期尚未拆分为文章。", NoPages: "本期尚无已识别的页面。", Empty: "暂无内容。",
+		Unnumbered: "无页码",
+		Prev:       "上一篇", Next: "下一篇", PrevIssue: "上一期", NextIssue: "下一期",
+		PrevYear: "上一年", NextYear: "下一年",
+		Issue: "期", Year: "年",
+
+		Original:    "原文",
+		Translation: "由俄语机器翻译",
+		Transcribed: "据扫描件录入",
+		NativeText:  "取自 PDF 的文字层",
+		NotChecked:  "尚未经人工校对。",
+		Draft:       "自动生成的粗略译稿，质量较低：可能有错误，语句也不够通顺。之后会被更好的译文取代。",
+		DraftShort:  "粗略译稿，质量较低",
+		Tag:         "标签",
+		TagLede:     "一个固定的地址。即使文章改名或移动，它也永远指向这篇文章。",
+		TagIndexLede: "每篇文章都有一个四个字符的标签。" +
+			"标签是固定的，文章改名或移动时也不会改变。",
+		TagLookup:    "输入标签",
+		RubricsLede:  "杂志的常设栏目。",
+		AuthorsLede:  "姓名按文章上刊印的写法。",
+		ProblemsLede: "按编号排列的 M 题和 F 题。题目和解答刊登在不同的期号中，因此每道题单独成页。",
+		SignedAlso:   "另署名为",
+		Posed:        "题目", Solved: "解答", NoSolution: "尚未刊登解答",
+		ChooseLanguage: "选择语言",
+		NotFound:       "页面未找到",
+		NotFoundLede:   "没有这个页面。也许这篇文章还没有被识别。",
+		Source:         "源代码",
+
+		issue: "Kvant %d 年第 %s 期", year: "Kvant %d 年", sheet: "第 %d 张", page: "第 %s 页", problem: "习题 %s", tagOn: "以 %s 开头的标签",
+		count: func(n int, what string) string {
+			noun := map[string]string{
+				"article": "篇文章", "issue": "期", "page": "页", "tag": "个标签", "problem": "道习题", "author": "位作者",
+			}[what]
+			return fmt.Sprintf("%d %s", n, noun)
+		},
+	},
 }
 
 // wordsFor is the frame in a language, or in English when the table does not
@@ -313,6 +364,38 @@ var rubricNames = map[string]map[string]string{
 		"osnovnye-stati":                    "Bài chính",
 		"raznoe":                            "Khác",
 		"otkryvayushchie-stati":             "Bài mở đầu",
+	},
+	"zh": {
+		"zadachnik-kvanta":                  "Kvant 习题集",
+		"kvant-dlya-mladshih-shkolnikov":    "Kvant 低年级专栏",
+		"praktikum-abiturienta":             "升学备考",
+		"matematicheskiy-kruzhok":           "数学小组",
+		"fizicheskiy-fakultativ":            "物理选修",
+		"laboratoriya-kvanta":               "Kvant 实验室",
+		"kaleydoskop-kvanta":                "Kvant 万花筒",
+		"nashi-nablyudeniya":                "我们的观察",
+		"shahmatnaya-stranichka":            "国际象棋",
+		"otvety-ukazaniya-resheniya":        "答案、提示与解答",
+		"novosti-nauki":                     "科学新闻",
+		"informatsiya":                      "信息",
+		"retsenzii-bibliografiya":           "书评与书目",
+		"zadachi-nashih-chitateley":         "读者来题",
+		"iz-istorii-nauki":                  "科学史话",
+		"smes":                              "杂录",
+		"shkola-v-kvante":                   "Kvant 学校",
+		"olimpiady":                         "奥林匹克",
+		"ekzamenatsionnye-materialy":        "考试资料",
+		"igry-i-golovolomki":                "游戏与谜题",
+		"konkurs-imeni-a-p-savina":          "A. P. 萨温竞赛",
+		"kvant-ulybaetsya":                  "Kvant 微笑",
+		"nam-pishut":                        "读者来信",
+		"o-lyudyah":                         "人物",
+		"matematicheskiy-mir":               "数学世界",
+		"ugolok-kollektsionera":             "收藏角",
+		"po-stranitsam-shkolnyh-uchebnikov": "课本拾遗",
+		"osnovnye-stati":                    "主要文章",
+		"raznoe":                            "其他",
+		"otkryvayushchie-stati":             "开篇文章",
 	},
 }
 
