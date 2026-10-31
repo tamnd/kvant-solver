@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io/fs"
 	"net/http"
@@ -15,6 +16,7 @@ import (
 	"github.com/tamnd/kvant-solver/api"
 	"github.com/tamnd/kvant-solver/corpus"
 	"github.com/tamnd/kvant-solver/glossary"
+	"github.com/tamnd/kvant-solver/mt"
 	"github.com/tamnd/kvant-solver/translate"
 )
 
@@ -35,6 +37,9 @@ func runTranslate(args []string) error {
 	audit := fs.Bool("audit", false, "report what is stale and write nothing")
 	force := fs.Bool("force", false, "retranslate files the staleness check says are current")
 	write := fs.Bool("write", false, "write the translations into the corpus")
+	engineName := fs.String("engine", "model", "model, or draft for a fast rough pass through --mt-url that a model run replaces later")
+	mtURL := fs.String("mt-url", os.Getenv("KVANT_MT_URL"), "the sentence translation service a draft run uses")
+	mtGap := fs.Duration("mt-gap", 1500*time.Millisecond, "the least time between two calls to the translation service")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -74,6 +79,25 @@ func runTranslate(args []string) error {
 			UserAgent:  "kvant/" + version,
 		},
 		Progress: func(line string) { fmt.Println("  " + line) },
+		From:     *from,
+	}
+	drafting := false
+	switch *engineName {
+	case "model":
+	case "draft":
+		if *mtURL == "" {
+			return fmt.Errorf("a draft run needs --mt-url or KVANT_MT_URL")
+		}
+		drafting = true
+		engine.Machine = &mt.Client{
+			URL:        *mtURL,
+			HTTPClient: &http.Client{Timeout: 2 * time.Minute},
+			Gap:        *mtGap,
+			Retries:    *retries + 4,
+			Backoff:    30 * time.Second,
+		}
+	default:
+		return fmt.Errorf("--engine is model or draft, not %s", *engineName)
 	}
 
 	report := &translate.Audit{Lang: *lang}
@@ -100,7 +124,11 @@ func runTranslate(args []string) error {
 		target := targetPath(c, key, *from, *lang)
 		state := stateOf(target, front, body, g, *lang)
 		report.Add(strings.TrimPrefix(target, c.Root+string(filepath.Separator)), state)
-		if !*force && !state.Stale() && !state.Untranslated {
+		need := state.Stale() || state.Untranslated
+		if drafting {
+			need = state.Redraft()
+		}
+		if !*force && !need {
 			continue
 		}
 		if *audit {
@@ -116,6 +144,11 @@ func runTranslate(args []string) error {
 			g, translate.Options{Model: *model, Retries: *retries})
 		if err != nil {
 			fmt.Printf("  failed: %v\n", err)
+			// A service that refuses after every retry will refuse the next
+			// file too, and hammering it only lengthens the refusal.
+			if errors.Is(err, mt.ErrRefused) {
+				return err
+			}
 			continue
 		}
 		for _, w := range res.Warnings {

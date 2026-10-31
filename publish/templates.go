@@ -166,7 +166,7 @@ var articleTmpl = mustParse("article", `
 {{if .Data.Authors}}<p class="by">{{range $i, $a := .Data.Authors}}{{if $i}}, {{end}}<a href="{{$a.Href}}">{{$a.Text}}</a>{{end}}</p>{{end}}
 <div class="meta">{{range .Data.Chips}}{{if .Href}}<a class="chip{{with .Kicker}} {{.}}{{end}}" href="{{.Href}}">{{.Text}}</a>{{else}}<span class="chip">{{.Text}}</span>{{end}}{{end}}</div>
 </div>
-{{with .Data.Notice}}<p class="notice">{{.Text}}{{with .Href}} <a href="{{.}}">{{$.T.Original}} &rarr;</a>{{end}}</p>{{end}}
+{{with .Data.Notice}}<p class="notice{{with .Kicker}} {{.}}{{end}}">{{.Text}}{{with .Href}} <a href="{{.}}">{{$.T.Original}} &rarr;</a>{{end}}</p>{{end}}
 <div class="doc">
 {{.Data.Body}}
 </div>

@@ -25,6 +25,10 @@ type Staleness struct {
 	// the thing the translation is being held to and changing it means every
 	// file was held to something else.
 	PromptMoved bool
+	// Draft is a file that is a rough machine pass. It is stale to a model run,
+	// which is there to replace it, and current to another draft run, which
+	// has nothing better to offer.
+	Draft bool
 	// Untranslated is a file with no translation stamp at all, which is not
 	// stale so much as absent, and the two want different work.
 	Untranslated bool
@@ -47,7 +51,17 @@ func (s Staleness) Stale() bool {
 	if s.Untranslated {
 		return false
 	}
-	return s.SourceMoved || s.PromptMoved || (s.GlossaryMoved && s.TermsMoved)
+	return s.Draft || s.SourceMoved || s.PromptMoved || (s.GlossaryMoved && s.TermsMoved)
+}
+
+// Redraft reports whether a draft run should write this file. A draft run
+// never overwrites a model translation, however stale: the model run that
+// owns the file will redo it, and a draft would only make it worse.
+func (s Staleness) Redraft() bool {
+	if s.Untranslated {
+		return true
+	}
+	return s.Draft && (s.SourceMoved || s.PromptMoved)
 }
 
 // Reason is what to print in the audit.
@@ -55,6 +69,10 @@ func (s Staleness) Reason() string {
 	switch {
 	case s.Untranslated:
 		return "not translated yet"
+	case s.Draft && s.SourceMoved:
+		return "a draft, and the Russian has changed since"
+	case s.Draft:
+		return "a rough draft, waiting for a model translation"
 	case s.SourceMoved && s.TermsMoved:
 		return "the Russian has changed and so have the glossary rows this file uses"
 	case s.SourceMoved:
@@ -105,6 +123,13 @@ func Check(p Pair, g *glossary.Glossary, prompts Prompts) Staleness {
 	}
 	var s Staleness
 	s.SourceMoved = p.Stamp.SourceSHA256 != p.Source.ContentSHA256
+	if p.Stamp.TranslationQuality == corpus.QualityDraft {
+		// A draft is held to the harness that wrote it rather than to the
+		// prompt, and the glossary is a model's business.
+		s.Draft = true
+		s.PromptMoved = p.Target.PromptSHA256 != DraftVersion
+		return s
+	}
 	// A file written before the prompt was ever hashed says nothing about it,
 	// and treating silence as a mismatch would restale every page from the first
 	// runs. It gets left alone until something else sends it back.
@@ -136,6 +161,9 @@ func Stamp(sourceKey string, source corpus.Provenance, sourceBody string,
 		SourceSHA256:     source.ContentSHA256,
 		TranslationModel: model,
 		TranslationRun:   run,
+	}
+	if model == DraftModel {
+		t.TranslationQuality = corpus.QualityDraft
 	}
 	if g != nil {
 		t.GlossaryVersion = g.Version
