@@ -1,6 +1,7 @@
 package publish
 
 import (
+	"bufio"
 	"bytes"
 	"fmt"
 	"html/template"
@@ -9,6 +10,7 @@ import (
 	"path"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -48,6 +50,9 @@ type Site struct {
 	// was read. They are half the bytes of the site, and GitHub Pages stops at
 	// a gigabyte.
 	NoSheets bool
+	// NoDrafts leaves out every translated file that is still a rough draft,
+	// for a host too small to carry a whole second language of them.
+	NoDrafts bool
 	// Workers is how many issues render at once. Zero means one per CPU.
 	Workers int
 	// MaxFiles and MaxBytes fail the build when the output is bigger than the
@@ -313,6 +318,16 @@ func (s *Site) shelf(lang string) (*shelf, error) {
 		if len(names) == 0 && len(sheets) == 0 {
 			continue // a directory with nothing read into it yet
 		}
+		if s.NoDrafts && lang != corpus.DefaultLang {
+			dir := s.Corpus.IssueDir(lang, key)
+			names = slices.DeleteFunc(names, func(n string) bool { return isDraft(filepath.Join(dir, "articles", n)) })
+			sheets = slices.DeleteFunc(sheets, func(i int) bool {
+				return isDraft(s.Corpus.PagePath(lang, corpus.PageID{Issue: key, Index: i}))
+			})
+			if len(names) == 0 && len(sheets) == 0 {
+				continue
+			}
+		}
 		sh.issues = append(sh.issues, key)
 		sh.articles[key] = names
 		sh.sheets[key] = sheets
@@ -325,7 +340,33 @@ func (s *Site) shelf(lang string) (*shelf, error) {
 	if err != nil {
 		return nil, err
 	}
+	if s.NoDrafts && lang != corpus.DefaultLang {
+		sh.problems = slices.DeleteFunc(sh.problems, func(id corpus.ProblemID) bool {
+			return isDraft(s.Corpus.ProblemPath(lang, id))
+		})
+	}
 	return sh, nil
+}
+
+// isDraft reads only the front matter, which is enough to answer and is what
+// keeps a pass over twenty thousand files cheap.
+func isDraft(path string) bool {
+	f, err := os.Open(path)
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+	sc := bufio.NewScanner(f)
+	for n := 0; sc.Scan(); n++ {
+		line := sc.Text()
+		if n > 0 && line == "---" {
+			return false
+		}
+		if line == "translation_quality: "+corpus.QualityDraft {
+			return true
+		}
+	}
+	return false
 }
 
 // noteBadMath records the formulas one file lost.
@@ -585,11 +626,10 @@ func (s *Site) issue(r *Renderer, lang string, key corpus.IssueKey) result {
 			data.Chips = append(data.Chips, link{Href: href(from, tagURL(string(f.Tag))), Text: t.Tag + " " + string(f.Tag), Kicker: "tag"})
 		}
 		if f.TranslatedFrom != "" {
-			note := t.Translation
-			if f.TranslationModel != "" {
-				note += " (" + f.TranslationModel + ")"
-			}
-			data.Notice = &link{Text: note + ". " + t.NotChecked}
+			// Which model or service did the work is the repository's business
+			// and is in the front matter; the reader is told what kind of text
+			// this is and nothing about the tooling.
+			data.Notice = &link{Text: t.Translation + ". " + t.NotChecked}
 			if f.TranslationQuality == corpus.QualityDraft {
 				data.Notice = &link{Text: t.Draft, Kicker: "warn"}
 			}
@@ -737,20 +777,12 @@ func provenance(t words, p corpus.Provenance, tr corpus.Translated) string {
 	case corpus.ExtractionNative, corpus.ExtractionPublisher:
 		parts = append(parts, t.NativeText)
 	case corpus.ExtractionVision:
-		how := t.Transcribed
-		if p.ExtractionModel != "" {
-			how += " (" + p.ExtractionModel + ")"
-		}
-		parts = append(parts, how)
+		parts = append(parts, t.Transcribed)
 	}
 	if tr.TranslationQuality == corpus.QualityDraft {
 		parts = append(parts, t.DraftShort)
 	} else if tr.TranslatedFrom != "" {
-		how := t.Translation
-		if tr.TranslationModel != "" {
-			how += " (" + tr.TranslationModel + ")"
-		}
-		parts = append(parts, how)
+		parts = append(parts, t.Translation)
 	}
 	return strings.Join(parts, " · ")
 }
