@@ -140,6 +140,23 @@ func Issue(key corpus.IssueKey, rows []manifest.Row, pages []Page) Result {
 		return result
 	}
 
+	// Where each start page has another piece's tail above the heading, and
+	// where on the page the heading is. A page two rows both start on is left
+	// whole, since there is no telling whose heading comes first.
+	shared := map[int]int{}
+	for _, item := range starts {
+		shared[item.start]++
+	}
+	cuts := map[int]int{}
+	for _, item := range starts {
+		if shared[item.start] > 1 {
+			continue
+		}
+		if cut := cutAt(byIndex[item.start].Body, item.row.Title, authors(item.row.Authors)); cut > 0 {
+			cuts[item.start] = cut
+		}
+	}
+
 	last := pages[len(pages)-1].Index
 	claimed := map[int]bool{}
 	for i, item := range starts {
@@ -159,7 +176,7 @@ func Issue(key corpus.IssueKey, rows []manifest.Row, pages []Page) Result {
 				end = other.start - 1
 			}
 		}
-		article := build(key, item.row, item.start, end, byIndex, i+1)
+		article := build(key, item.row, item.start, end, byIndex, i+1, cuts)
 		for _, index := range article.Pages {
 			claimed[index] = true
 		}
@@ -176,7 +193,11 @@ func Issue(key corpus.IssueKey, rows []manifest.Row, pages []Page) Result {
 }
 
 // build cuts one article out of the pages.
-func build(key corpus.IssueKey, row manifest.Row, start, end int, byIndex map[int]Page, ordinal int) Article {
+//
+// cuts says where on a page the next piece's heading is. The article's own
+// first page is taken from its heading down, and when the page after its end is
+// cut, the part above that heading is this article's last page.
+func build(key corpus.IssueKey, row manifest.Row, start, end int, byIndex map[int]Page, ordinal int, cuts map[int]int) Article {
 	article := Article{
 		Title:   strings.TrimSpace(row.Title),
 		Authors: authors(row.Authors),
@@ -205,6 +226,10 @@ func build(key corpus.IssueKey, row manifest.Row, start, end int, byIndex map[in
 			}
 		}
 	}
+	tail := end + 1
+	if _, ok := cuts[tail]; ok && hasIndex(byIndex, tail) && len(article.Pages) > 0 && article.Pages[len(article.Pages)-1] == end {
+		article.Pages = append(article.Pages, tail)
+	}
 	if len(article.Pages) > 0 {
 		article.First = article.Pages[0]
 		article.Last = article.Pages[len(article.Pages)-1]
@@ -214,7 +239,16 @@ func build(key corpus.IssueKey, row manifest.Row, start, end int, byIndex map[in
 	var labels []string
 	for _, index := range article.Pages {
 		page := byIndex[index]
-		body := strings.TrimSpace(page.Body)
+		text := page.Body
+		if cut, ok := cuts[index]; ok {
+			switch {
+			case index == tail:
+				text = text[:cut]
+			case index == start:
+				text = folios(text[:cut]) + strings.TrimLeft(text[cut:], " \n")
+			}
+		}
+		body := strings.TrimSpace(text)
 		if body != "" {
 			parts = append(parts, body)
 		}
@@ -433,4 +467,16 @@ func clip(slug string, limit int) string {
 		cut = limit
 	}
 	return strings.Trim(slug[:cut], "-")
+}
+
+// folios keeps the folio lines of the part of a page cut away, so an article
+// that starts halfway down a page still says which page that was.
+func folios(head string) string {
+	var b strings.Builder
+	for _, line := range strings.Split(head, "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), ocr.FolioMarker) {
+			b.WriteString(strings.TrimSpace(line) + "\n\n")
+		}
+	}
+	return b.String()
 }
