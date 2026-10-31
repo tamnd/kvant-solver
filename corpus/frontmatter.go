@@ -44,7 +44,13 @@ type Translated struct {
 	TranslationRun   string `yaml:"translation_run,omitempty"`
 	GlossaryVersion  int    `yaml:"glossary_version,omitempty"`
 	GlossaryTerms    string `yaml:"glossary_terms_sha256,omitempty"`
+	// TranslationQuality is QualityDraft on a rough machine pass that a model
+	// translation is still to replace, and empty on everything else.
+	TranslationQuality string `yaml:"translation_quality,omitempty"`
 }
+
+// QualityDraft marks a translation as a rough first pass.
+const QualityDraft = "draft"
 
 // PageFront heads content/<lang>/<year>/<issue>/pages/NNNN.md, which is the
 // ground truth of the corpus. Articles are assembled out of these, and anything

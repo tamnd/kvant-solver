@@ -53,8 +53,12 @@ type Result struct {
 
 // Engine translates.
 type Engine struct {
-	Client   api.Completer
-	Prompts  Prompts
+	Client  api.Completer
+	Prompts Prompts
+	// Machine, when set, is used instead of Client and the result is a draft:
+	// see draft. From is the language it translates out of, ru when empty.
+	Machine  Machine
+	From     string
 	Progress func(string)
 }
 
@@ -66,6 +70,9 @@ type Engine struct {
 func (e *Engine) Translate(ctx context.Context, job Job, g *glossary.Glossary, opts Options) (Result, error) {
 	if !glossary.Known(job.Lang) {
 		return Result{}, fmt.Errorf("%s is not a language this corpus translates into", job.Lang)
+	}
+	if e.Machine != nil {
+		return e.draft(ctx, job, g)
 	}
 	prompts := e.Prompts
 	if prompts == nil {

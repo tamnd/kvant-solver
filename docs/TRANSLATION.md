@@ -123,6 +123,24 @@ Reads the whole tree and reports what is stale and why, and what has never been 
 
 With `--write` the audit also lands in `reports/translation-audit.md`.
 
+## Drafts
+
+```
+KVANT_MT_URL=... kvant translate --lang vi --engine draft --write
+```
+
+A model translation of the whole archive takes months on one subscription. A draft takes hours. `--engine draft` sends the prose to a plain sentence translation service (its address comes from `--mt-url` or `KVANT_MT_URL` and is not named in this repository), and what it writes is stamped as a draft: `translation_model: draft`, `translation_quality: draft`, and the harness version where a model translation keeps its prompt hash. The site puts a low quality warning at the top of every draft.
+
+The service knows nothing about formulas or Markdown, so it never sees either. The harness (`translate/machine.go`):
+
+- cuts every line away from its Markdown markers and every table row into cells;
+- swaps each formula, page marker, link, footnote, problem label and glossary term for a numbered placeholder;
+- swaps the few words of the magazine the service always gets wrong (задача, решение, ответ, «Квант») for the renderings the model translations use;
+- checks that every placeholder came back exactly once, and sends a line that lost one again in the pieces between its placeholders, which cannot lose any;
+- refuses the file if the formulas of the draft are not exactly the formulas of the Russian. Order may differ, because a formula travels with its clause.
+
+A draft is stale to a model run, which exists to replace it, and current to another draft run. A draft run never overwrites a model translation, however stale.
+
 ## The Quantum mapping
 
 ```

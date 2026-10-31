@@ -590,6 +590,9 @@ func (s *Site) issue(r *Renderer, lang string, key corpus.IssueKey) result {
 				note += " (" + f.TranslationModel + ")"
 			}
 			data.Notice = &link{Text: note + ". " + t.NotChecked}
+			if f.TranslationQuality == corpus.QualityDraft {
+				data.Notice = &link{Text: t.Draft, Kicker: "warn"}
+			}
 			if orig := articleURL(corpus.DefaultLang, key, v.name); s.known[orig] {
 				data.Notice.Href = href(from, orig)
 			}
@@ -740,7 +743,9 @@ func provenance(t words, p corpus.Provenance, tr corpus.Translated) string {
 		}
 		parts = append(parts, how)
 	}
-	if tr.TranslatedFrom != "" {
+	if tr.TranslationQuality == corpus.QualityDraft {
+		parts = append(parts, t.DraftShort)
+	} else if tr.TranslatedFrom != "" {
 		how := t.Translation
 		if tr.TranslationModel != "" {
 			how += " (" + tr.TranslationModel + ")"

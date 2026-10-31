@@ -40,6 +40,9 @@ type words struct {
 
 	Original, Translation, Transcribed, NativeText string
 	NotChecked                                     string
+	// Draft is the warning on a rough automatic pass, and DraftShort is the
+	// same said in a few words for the line under a sheet.
+	Draft, DraftShort string
 	Tag, TagLede, TagIndexLede, TagLookup          string
 	RubricsLede, AuthorsLede, ProblemsLede         string
 	SignedAlso                                     string
@@ -91,6 +94,8 @@ var languages = map[string]words{
 		Transcribed: "Набрано по скану",
 		NativeText:  "Взято из текстового слоя PDF",
 		NotChecked:  "Не проверено человеком.",
+		Draft:       "Черновой автоматический перевод низкого качества: возможны ошибки и неточности. Он будет заменён более качественным переводом.",
+		DraftShort:  "Черновой перевод, низкое качество",
 		Tag:         "Тег",
 		TagLede:     "Постоянный адрес. Он закреплён за материалом навсегда, даже если тот сменит название или путь.",
 		TagIndexLede: "У каждого материала есть тег из четырёх знаков. " +
@@ -145,6 +150,8 @@ var languages = map[string]words{
 		Transcribed: "Transcribed from the scan",
 		NativeText:  "Taken from the PDF's text layer",
 		NotChecked:  "Not checked by a person.",
+		Draft:       "Rough automatic draft, low quality: expect mistakes and awkward wording. It will be replaced by a better translation.",
+		DraftShort:  "Rough draft translation, low quality",
 		Tag:         "Tag",
 		TagLede:     "A permanent address. It stays with the piece for good, even when the piece is renamed or moved.",
 		TagIndexLede: "Every piece carries a four character tag. " +
@@ -202,6 +209,8 @@ var languages = map[string]words{
 		Transcribed: "Chép lại từ bản quét",
 		NativeText:  "Lấy từ lớp văn bản của PDF",
 		NotChecked:  "Chưa được người kiểm tra.",
+		Draft:       "Bản dịch tự động sơ bộ, chất lượng thấp: có thể còn lỗi và câu chữ chưa tự nhiên. Bản này sẽ được thay bằng bản dịch tốt hơn.",
+		DraftShort:  "Bản dịch sơ bộ, chất lượng thấp",
 		Tag:         "Thẻ",
 		TagLede:     "Một địa chỉ cố định. Nó gắn với bài mãi mãi, kể cả khi bài đổi tên hay đổi chỗ.",
 		TagIndexLede: "Mỗi bài có một thẻ bốn ký tự. " +
