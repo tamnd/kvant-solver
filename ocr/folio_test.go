@@ -300,3 +300,25 @@ func TestAFolioerWithNoEngineSaysNothing(t *testing.T) {
 		t.Fatalf("got %d, %v, %v, want a quiet nothing", number, printed, err)
 	}
 }
+
+func TestTheHeadBandIsTheFirstLineOfInk(t *testing.T) {
+	img := image.NewGray(image.Rect(0, 0, 400, 1000))
+	for i := range img.Pix {
+		img.Pix[i] = 255
+	}
+	// a running head at 3% with the folio in it, and body text below
+	for y := 30; y < 45; y++ {
+		for x := 20; x < 380; x++ {
+			img.SetGray(x, y, color.Gray{})
+		}
+	}
+	for y := 120; y < 900; y += 20 {
+		for x := 20; x < 380; x++ {
+			img.SetGray(x, y, color.Gray{})
+		}
+	}
+	got := ocr.HeadBand(img, ocr.FolioBand)
+	if got.Min.Y > 30 || got.Max.Y < 45 || got.Max.Y > 60 {
+		t.Fatalf("head band %v, want the line at 30..45", got)
+	}
+}
