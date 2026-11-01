@@ -54,7 +54,7 @@ func NewRenderer() (*Renderer, error) {
 		// tag in a body would put a request for a picture on the page without
 		// any file ever being written.
 		md: goldmark.New(
-			goldmark.WithExtensions(extension.Footnote, extension.Typographer),
+			goldmark.WithExtensions(extension.Footnote, extension.Typographer, extension.Table),
 			goldmark.WithRendererOptions(
 				html.WithHardWraps(),
 				renderer.WithNodeRenderers(util.Prioritized(unlinked{}, 100)),
@@ -92,7 +92,7 @@ func (b BadMath) Error() string { return fmt.Sprintf("line %d: %v", b.Line, b.Er
 // An error means the body could not be rendered at all. A body with bad
 // formulas in it renders, and the bad ones come back in the second result.
 func (r *Renderer) Render(body string) (string, []BadMath, error) {
-	hidden, spans := hideMath(body)
+	hidden, spans := hideMath(mendTables(body))
 
 	var buf bytes.Buffer
 	if err := r.md.Convert([]byte(escapeMarkup(hidden)), &buf); err != nil {

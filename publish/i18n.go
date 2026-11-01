@@ -47,8 +47,12 @@ type words struct {
 	RubricsLede, AuthorsLede, ProblemsLede string
 	SignedAlso                             string
 	Posed, Solved, NoSolution              string
-	ChooseLanguage, NotFound, NotFoundLede string
-	Source                                 string
+	// Math and Physics head the two series on the problem index, WithSolution
+	// is the legend of a tile whose solution was printed, and InOriginal says
+	// that a tile opens the problem in the language it was printed in.
+	Math, Physics, WithSolution, InOriginal string
+	ChooseLanguage, NotFound, NotFoundLede  string
+	Source                                  string
 
 	// issue and friends are formats rather than words, because the order of
 	// the parts is not the same in every language.
@@ -100,9 +104,10 @@ var languages = map[string]words{
 		TagLede:     "Постоянный адрес. Он закреплён за материалом навсегда, даже если тот сменит название или путь.",
 		TagIndexLede: "У каждого материала есть тег из четырёх знаков. " +
 			"Он закреплён навсегда и не меняется, когда материал переименован или перемещён.",
-		TagLookup:    "Введите тег",
-		RubricsLede:  "Постоянные разделы журнала.",
-		AuthorsLede:  "Имена так, как они напечатаны над статьями.",
+		TagLookup:   "Введите тег",
+		RubricsLede: "Постоянные разделы журнала.",
+		AuthorsLede: "Имена так, как они напечатаны над статьями.",
+		Math:        "Математика", Physics: "Физика", WithSolution: "решение напечатано", InOriginal: "открывается на языке оригинала",
 		ProblemsLede: "Задачи M и Ф под своими номерами. Условие и решение выходили в разных номерах, поэтому задача стоит отдельно от них обоих.",
 		SignedAlso:   "Подписано также",
 		Posed:        "Условие", Solved: "Решение", NoSolution: "решение не напечатано",
@@ -156,9 +161,10 @@ var languages = map[string]words{
 		TagLede:     "A permanent address. It stays with the piece for good, even when the piece is renamed or moved.",
 		TagIndexLede: "Every piece carries a four character tag. " +
 			"It is permanent and does not change when the piece is renamed or moved.",
-		TagLookup:    "Enter a tag",
-		RubricsLede:  "The standing sections of the magazine.",
-		AuthorsLede:  "Names as they are printed over the articles.",
+		TagLookup:   "Enter a tag",
+		RubricsLede: "The standing sections of the magazine.",
+		AuthorsLede: "Names as they are printed over the articles.",
+		Math:        "Mathematics", Physics: "Physics", WithSolution: "solution printed", InOriginal: "opens in the original Russian",
 		ProblemsLede: "The M and F problems under their own numbers. The statement and the solution ran in different issues, so a problem stands apart from both.",
 		SignedAlso:   "Also signed",
 		Posed:        "Statement", Solved: "Solution", NoSolution: "solution not printed",
@@ -215,9 +221,10 @@ var languages = map[string]words{
 		TagLede:     "Một địa chỉ cố định. Nó gắn với bài mãi mãi, kể cả khi bài đổi tên hay đổi chỗ.",
 		TagIndexLede: "Mỗi bài có một thẻ bốn ký tự. " +
 			"Thẻ là cố định và không đổi khi bài được đổi tên hay chuyển chỗ.",
-		TagLookup:    "Nhập thẻ",
-		RubricsLede:  "Các chuyên mục thường kỳ của tạp chí.",
-		AuthorsLede:  "Tên như được in trên các bài báo.",
+		TagLookup:   "Nhập thẻ",
+		RubricsLede: "Các chuyên mục thường kỳ của tạp chí.",
+		AuthorsLede: "Tên như được in trên các bài báo.",
+		Math:        "Toán học", Physics: "Vật lý", WithSolution: "đã in lời giải", InOriginal: "mở bản gốc tiếng Nga",
 		ProblemsLede: "Các bài toán M và F theo số của chúng. Đề bài và lời giải in ở các số khác nhau, nên bài toán đứng riêng.",
 		SignedAlso:   "Cũng ký là",
 		Posed:        "Đề bài", Solved: "Lời giải", NoSolution: "chưa in lời giải",
@@ -266,9 +273,10 @@ var languages = map[string]words{
 		TagLede:     "一个固定的地址。即使文章改名或移动，它也永远指向这篇文章。",
 		TagIndexLede: "每篇文章都有一个四个字符的标签。" +
 			"标签是固定的，文章改名或移动时也不会改变。",
-		TagLookup:    "输入标签",
-		RubricsLede:  "杂志的常设栏目。",
-		AuthorsLede:  "姓名按文章上刊印的写法。",
+		TagLookup:   "输入标签",
+		RubricsLede: "杂志的常设栏目。",
+		AuthorsLede: "姓名按文章上刊印的写法。",
+		Math:        "数学", Physics: "物理", WithSolution: "已刊登解答", InOriginal: "打开俄文原文",
 		ProblemsLede: "按编号排列的 M 题和 F 题。题目和解答刊登在不同的期号中，因此每道题单独成页。",
 		SignedAlso:   "另署名为",
 		Posed:        "题目", Solved: "解答", NoSolution: "尚未刊登解答",

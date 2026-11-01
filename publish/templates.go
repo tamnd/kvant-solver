@@ -199,9 +199,20 @@ var listTmpl = mustParse("list", rows+`
 <div class="head">{{with .Data.Kicker}}<span class="eyebrow">{{.}}</span>{{end}}<h1>{{.Title}}</h1>{{with .Data.Lede}}<p class="lede">{{.}}</p>{{end}}</div>
 {{if .Data.Letters}}<nav class="letters">{{range .Data.Groups}}<a href="#{{.ID}}">{{.Title}}</a>{{end}}</nav>{{end}}
 {{if .Data.Groups}}{{range .Data.Groups}}<section class="group" id="{{.ID}}">{{if .Title}}<h2>{{.Title}}</h2>{{end}}
-{{template "rows" .Items}}
+{{if $.Data.Compact}}<ul class="names">{{range .Items}}<li><a href="{{.Href}}">{{.Text}}</a>{{with .Note}}<span class="n">{{.}}</span>{{end}}</li>{{end}}</ul>{{else}}{{template "rows" .Items}}{{end}}
 </section>
 {{end}}{{else}}{{if .Data.Items}}{{template "rows" .Data.Items}}{{else}}<p class="empty">{{.T.Empty}}</p>{{end}}{{end}}
+`)
+
+// problemIndexTmpl is the Задачник as a grid of numbers, a block to a hundred.
+var problemIndexTmpl = mustParse("problemindex", `
+<div class="head"><h1>{{.Title}}</h1>{{with .Data.Lede}}<p class="lede">{{.}}</p>{{end}}</div>
+{{if .Data.Series}}<nav class="letters">{{range .Data.Series}}<a href="#{{.ID}}">{{.Title}}</a>{{end}}<span class="legend"><i class="tile solved"></i>{{.Data.WithSolution}}</span></nav>
+{{range .Data.Series}}<section class="series" id="{{.ID}}"><h2>{{.Title}}</h2><p class="series-note">{{.Note}}</p>
+<nav class="blocks">{{range .Blocks}}<a href="#{{.ID}}">{{.Title}}</a>{{end}}</nav>
+{{range .Blocks}}<section class="block" id="{{.ID}}"><h3>{{.Title}}</h3><div class="tiles">{{range .Tiles}}<a class="tile{{if .Solved}} solved{{end}}{{if .Original}} original{{end}}" href="{{.Href}}" title="{{.Note}}">{{.Text}}</a>{{end}}</div></section>
+{{end}}</section>
+{{end}}{{else}}<p class="empty">{{.T.Empty}}</p>{{end}}
 `)
 
 // problemTmpl is one problem of the Задачник, with both of its printed halves.

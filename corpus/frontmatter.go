@@ -95,13 +95,17 @@ type ArticleFront struct {
 // issues later, which is why the problem corpus cannot be assembled one issue
 // at a time and why these two fields exist rather than a single issue field.
 type ProblemFront struct {
-	ID                   string   `yaml:"id"`
-	Subject              Subject  `yaml:"subject"`
-	Tag                  Tag      `yaml:"tag,omitempty"`
-	PosedIn              string   `yaml:"posed_in"`
-	PosedPages           string   `yaml:"posed_pages,omitempty"`
-	SolvedIn             string   `yaml:"solved_in,omitempty"`
-	SolvedPages          string   `yaml:"solved_pages,omitempty"`
+	ID          string  `yaml:"id"`
+	Subject     Subject `yaml:"subject"`
+	Tag         Tag     `yaml:"tag,omitempty"`
+	PosedIn     string  `yaml:"posed_in"`
+	PosedPages  string  `yaml:"posed_pages,omitempty"`
+	SolvedIn    string  `yaml:"solved_in,omitempty"`
+	SolvedPages string  `yaml:"solved_pages,omitempty"`
+	// PosedArticle and SolvedArticle are the file names of the articles the two
+	// halves were cut from, under the issue's articles/ directory.
+	PosedArticle         string   `yaml:"posed_article,omitempty"`
+	SolvedArticle        string   `yaml:"solved_article,omitempty"`
 	Authors              []string `yaml:"authors,omitempty"`
 	HasPublishedSolution bool     `yaml:"has_published_solution"`
 	Provenance           `yaml:",inline"`

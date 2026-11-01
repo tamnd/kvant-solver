@@ -19,6 +19,7 @@ import (
 
 	"github.com/tamnd/kvant-solver/corpus"
 	"github.com/tamnd/kvant-solver/katex"
+	"github.com/tamnd/kvant-solver/problems"
 )
 
 // DefaultSiteURL is where the site lives, and where every page says its
@@ -636,6 +637,7 @@ func (s *Site) issue(r *Renderer, lang string, key corpus.IssueKey) result {
 		if f.Tag != "" {
 			data.Chips = append(data.Chips, link{Href: href(from, tagURL(string(f.Tag))), Text: t.Tag + " " + string(f.Tag), Kicker: "tag"})
 		}
+		data.Chips = append(data.Chips, s.problemChips(lang, from, f)...)
 		if f.TranslatedFrom != "" {
 			// Which model or service did the work is the repository's business
 			// and is in the front matter; the reader is told what kind of text
@@ -1132,4 +1134,23 @@ func plural(n int, one, few, many string) string {
 	default:
 		return fmt.Sprintf("%d %s", n, many)
 	}
+}
+
+// problemChips links a Задачник article to the page of every problem its
+// heading names, so the statement and the solution printed issues apart can be
+// reached from either printing.
+func (s *Site) problemChips(lang, from string, f corpus.ArticleFront) []link {
+	if _, ok := problems.KindOf(f.Title); !ok && f.Rubric != problems.Rubric {
+		return nil
+	}
+	var chips []link
+	for _, id := range problems.Promised(f.Title) {
+		for _, l := range []string{lang, corpus.DefaultLang} {
+			if addr := problemURL(l, id); s.known[addr] {
+				chips = append(chips, link{Href: href(from, addr), Text: id.String(), Kicker: "problem"})
+				break
+			}
+		}
+	}
+	return chips
 }

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"html/template"
 	"sort"
+	"strconv"
 	"strings"
 	"unicode"
 
@@ -44,6 +45,8 @@ type doc struct {
 	Rubric string
 	Tag    string
 	Pages  string
+	// Solved is a problem whose solution the magazine printed.
+	Solved bool
 }
 
 // where is the issue a doc came out of, for the second column of a list.
@@ -67,8 +70,11 @@ func (d doc) row(from string) link {
 type listData struct {
 	Kicker, Lede string
 	Letters      bool
-	Groups       []group
-	Items        []link
+	// Compact sets the groups as short names in columns rather than rows,
+	// for an index of thousands of entries with nothing to say about each.
+	Compact bool
+	Groups  []group
+	Items   []link
 }
 
 type group struct {
@@ -195,7 +201,7 @@ func (s *Site) authorViews(lang string) error {
 			return err
 		}
 		first := initial(surname(name))
-		letters[first] = append(letters[first], link{Href: href(index, addr), Text: name, Note: t.Count(len(p.docs), "article")})
+		letters[first] = append(letters[first], link{Href: href(index, addr), Text: name, Note: strconv.Itoa(len(p.docs))})
 	}
 
 	var groups []group
@@ -212,7 +218,7 @@ func (s *Site) authorViews(lang string) error {
 	sort.Slice(groups, func(i, j int) bool { return groups[i].Title < groups[j].Title })
 	p := s.frame(lang, index, t.Authors)
 	p.Crumbs = s.crumbs(lang, index)
-	p.Data = listData{Lede: t.AuthorsLede + " " + t.Count(len(people), "author") + ".", Letters: len(groups) > 1, Groups: groups}
+	p.Data = listData{Lede: t.AuthorsLede + " " + t.Count(len(people), "author") + ".", Letters: len(groups) > 1, Compact: true, Groups: groups}
 	return s.emit(index, listTmpl, p)
 }
 
@@ -336,10 +342,10 @@ func (s *Site) problems(r *Renderer, lang string, ids []corpus.ProblemID) result
 
 		addr := problemURL(lang, id)
 		var chips []link
-		if posed := s.issueChip(lang, addr, t.Posed, front.PosedIn, front.PosedPages); posed != nil {
+		if posed := s.issueChip(lang, addr, t.Posed, front.PosedIn, front.PosedPages, front.PosedArticle); posed != nil {
 			chips = append(chips, *posed)
 		}
-		if solved := s.issueChip(lang, addr, t.Solved, front.SolvedIn, front.SolvedPages); solved != nil {
+		if solved := s.issueChip(lang, addr, t.Solved, front.SolvedIn, front.SolvedPages, front.SolvedArticle); solved != nil {
 			chips = append(chips, *solved)
 		} else {
 			chips = append(chips, link{Text: t.NoSolution})
@@ -360,7 +366,7 @@ func (s *Site) problems(r *Renderer, lang string, ids []corpus.ProblemID) result
 			res.err = err
 			return res
 		}
-		d := doc{Lang: lang, Kind: "problem", Addr: addr, Title: title, Authors: front.Authors, Tag: string(front.Tag), Pages: front.PosedPages}
+		d := doc{Lang: lang, Kind: "problem", Addr: addr, Title: title, Authors: front.Authors, Tag: string(front.Tag), Pages: front.PosedPages, Solved: front.HasPublishedSolution || front.SolvedIn != ""}
 		if key, err := corpus.ParseIssueKey(front.PosedIn); err == nil {
 			d.Key = key
 		}
@@ -375,7 +381,10 @@ func (s *Site) problems(r *Renderer, lang string, ids []corpus.ProblemID) result
 // issue is named either way and only becomes a link when there is something on
 // the other end. Writing the link regardless would leave the site pointing at a
 // directory that is not there, which is exactly what CheckLinks is for.
-func (s *Site) issueChip(lang, from, what, key, pages string) *link {
+//
+// The article the half was cut from is the better target when the site has it,
+// since that is where the words are; the issue is the fallback.
+func (s *Site) issueChip(lang, from, what, key, pages, article string) *link {
 	if key == "" {
 		return nil
 	}
@@ -389,6 +398,14 @@ func (s *Site) issueChip(lang, from, what, key, pages string) *link {
 		text += ", " + t.PageLabel(pages)
 	}
 	chip := &link{Text: text}
+	if article != "" {
+		for _, l := range []string{lang, corpus.DefaultLang} {
+			if addr := articleURL(l, parsed, article); s.known[addr] {
+				chip.Href = href(from, addr)
+				return chip
+			}
+		}
+	}
 	for _, l := range []string{lang, corpus.DefaultLang} {
 		if addr := issueURL(l, parsed); s.known[addr] {
 			chip.Href = href(from, addr)
@@ -398,29 +415,98 @@ func (s *Site) issueChip(lang, from, what, key, pages string) *link {
 	return chip
 }
 
-// problemIndex writes the list of the problems in one language.
+// problemIndex writes the index of the problems in one language.
+//
+// Thousands of rows would be a list nobody reads, so the index is a grid of
+// numbers in blocks of a hundred, one series after the other, with the tiles
+// whose solution the magazine printed set apart. A language that has not had
+// a problem translated yet shows the original ones rather than an empty page.
 func (s *Site) problemIndex(lang string) error {
 	t := wordsFor(lang)
 	index := problemsURL(lang)
-	bySubject := map[string][]link{}
-	for _, d := range s.docs[lang] {
-		if d.Kind != "problem" {
+	type tile struct {
+		Href, Text, Note string
+		Solved, Original bool
+	}
+	type block struct {
+		ID, Title string
+		Tiles     []tile
+	}
+	type series struct {
+		ID, Title, Note string
+		Blocks          []block
+	}
+	tiles := map[corpus.ProblemID]tile{}
+	add := func(l string, original bool) {
+		for _, d := range s.docs[l] {
+			if d.Kind != "problem" {
+				continue
+			}
+			id, err := corpus.ParseProblemID(strings.TrimPrefix(d.Addr, problemsURL(l)))
+			if err != nil {
+				continue
+			}
+			if _, ok := tiles[id]; ok {
+				continue
+			}
+			note := id.String()
+			if w := d.where(); w != "" {
+				note += " · " + w
+			}
+			if original {
+				note += " · " + t.InOriginal
+			}
+			tiles[id] = tile{Href: href(index, d.Addr), Text: strconv.Itoa(id.Number), Note: note, Solved: d.Solved, Original: original}
+		}
+	}
+	add(lang, false)
+	if lang != corpus.DefaultLang {
+		add(corpus.DefaultLang, true)
+	}
+	ids := make([]corpus.ProblemID, 0, len(tiles))
+	for id := range tiles {
+		ids = append(ids, id)
+	}
+	sort.Slice(ids, func(i, j int) bool { return ids[i].Number < ids[j].Number })
+
+	var all []series
+	for _, sub := range []struct {
+		subject     corpus.Subject
+		letter, nam string
+	}{{corpus.Math, "M", t.Math}, {corpus.Physics, "F", t.Physics}} {
+		ser := series{ID: strings.ToLower(sub.letter), Title: sub.letter + " · " + sub.nam}
+		solved, n := 0, 0
+		for _, id := range ids {
+			if id.Subject != sub.subject {
+				continue
+			}
+			n++
+			tl := tiles[id]
+			if tl.Solved {
+				solved++
+			}
+			lo := (id.Number-1)/100*100 + 1
+			bid := fmt.Sprintf("%s%d", ser.ID, lo)
+			if len(ser.Blocks) == 0 || ser.Blocks[len(ser.Blocks)-1].ID != bid {
+				ser.Blocks = append(ser.Blocks, block{ID: bid, Title: fmt.Sprintf("%s%d–%s%d", sub.letter, lo, sub.letter, lo+99)})
+			}
+			last := &ser.Blocks[len(ser.Blocks)-1]
+			last.Tiles = append(last.Tiles, tl)
+		}
+		if n == 0 {
 			continue
 		}
-		id := strings.TrimPrefix(d.Addr, index)
-		note := d.where()
-		bySubject[id[:1]] = append(bySubject[id[:1]], link{Href: href(index, d.Addr), Text: id, Note: note, Sub: strings.Join(d.Authors, ", ")})
-	}
-	var groups []group
-	for _, subject := range []string{"M", "F"} {
-		if rows := bySubject[subject]; len(rows) > 0 {
-			groups = append(groups, group{ID: strings.ToLower(subject), Title: subject, Items: rows})
-		}
+		ser.Note = fmt.Sprintf("%s · %d %s", t.Count(n, "problem"), solved, t.WithSolution)
+		all = append(all, ser)
 	}
 	p := s.frame(lang, index, t.Problems)
 	p.Crumbs = s.crumbs(lang, index)
-	p.Data = listData{Lede: t.ProblemsLede, Letters: len(groups) > 1, Groups: groups}
-	return s.emit(index, listTmpl, p)
+	p.Data = struct {
+		Lede         string
+		Series       []series
+		WithSolution string
+	}{t.ProblemsLede, all, t.WithSolution}
+	return s.emit(index, problemIndexTmpl, p)
 }
 
 // alphabetical is a title with the punctuation in front of it taken off.

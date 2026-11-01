@@ -102,8 +102,8 @@ func Split(body string, kind Kind) []Item {
 // is looking for: «Решения задач М273—М279» would match a naive test for
 // «Задачи» and every solution in the archive would be filed as a statement.
 var (
-	solvedTitle = regexp.MustCompile(`(?i)^\s*Решени`)
-	posedTitle  = regexp.MustCompile(`(?i)^\s*Задачи`)
+	solvedTitle = regexp.MustCompile(`(?i)^\s*\[?\s*Решени`)
+	posedTitle  = regexp.MustCompile(`(?i)^\s*\[?\s*Задачи`)
 )
 
 // KindOf reads a title and says which half the article is, if it is either.
