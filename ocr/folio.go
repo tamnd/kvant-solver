@@ -100,6 +100,34 @@ func (f *Folioer) Read(ctx context.Context, image string) (int, bool, error) {
 	return number, ok, nil
 }
 
+// ReadHead is Read for the head of the page. The magazine moved its folios
+// from the foot to the head beside the running title, and on those pages the
+// foot band holds a caption or the last formula of the column, so a number read
+// there is the wrong one rather than none.
+func (f *Folioer) ReadHead(ctx context.Context, image string) (int, bool, error) {
+	if f == nil || f.Engine == nil {
+		return 0, false, nil
+	}
+	crop, err := os.CreateTemp("", "kvant-folio-*.jpg")
+	if err != nil {
+		return 0, false, err
+	}
+	if err := crop.Close(); err != nil {
+		return 0, false, err
+	}
+	defer func() { _ = os.Remove(crop.Name()) }()
+
+	if err := CropHead(image, crop.Name(), f.band()); err != nil {
+		return 0, false, err
+	}
+	answer, err := f.Engine.Read(ctx, crop.Name())
+	if err != nil {
+		return 0, false, err
+	}
+	number, ok := ParseFolio(answer)
+	return number, ok, nil
+}
+
 func (f *Folioer) band() float64 {
 	if f.Band > 0 && f.Band < 1 {
 		return f.Band
@@ -114,6 +142,16 @@ func (f *Folioer) band() float64 {
 // avoided by not resizing: the band was read correctly at its own size and
 // doubling it only cost time.
 func CropFoot(from, to string, band float64) error {
+	return cropBand(from, to, func(img image.Image) image.Rectangle { return FootBand(img, band) })
+}
+
+// CropHead writes the strip at the top of a page, where the folio has been
+// printed since the redesign, beside the running head.
+func CropHead(from, to string, band float64) error {
+	return cropBand(from, to, func(img image.Image) image.Rectangle { return HeadBand(img, band) })
+}
+
+func cropBand(from, to string, pick func(image.Image) image.Rectangle) error {
 	file, err := os.Open(from)
 	if err != nil {
 		return err
@@ -139,7 +177,7 @@ func CropFoot(from, to string, band float64) error {
 	// the last chance to see a short write and the defer is only for the paths
 	// that leave early.
 	defer func() { _ = out.Close() }()
-	if err := jpeg.Encode(out, sub.SubImage(FootBand(full, band)), &jpeg.Options{Quality: 95}); err != nil {
+	if err := jpeg.Encode(out, sub.SubImage(pick(full)), &jpeg.Options{Quality: 95}); err != nil {
 		return err
 	}
 	return out.Close()
@@ -179,6 +217,37 @@ func FootBand(img image.Image, band float64) image.Rectangle {
 
 	tall := max(1, int(float64(height)*band))
 	return image.Rect(bounds.Min.X, bounds.Max.Y-tall, bounds.Max.X, bounds.Max.Y)
+}
+
+// HeadBand is FootBand turned over: the first line of ink from the top edge,
+// held to the same depth and height limits, and the fixed band when what is
+// found is a picture or a line of the column rather than the running head.
+func HeadBand(img image.Image, band float64) image.Rectangle {
+	bounds := img.Bounds()
+	height := bounds.Dy()
+	limit := bounds.Min.Y + int(float64(height)*footLook)
+
+	y := bounds.Min.Y
+	for y < limit && !inked(img, bounds, y) {
+		y++
+	}
+	if y < limit {
+		top := y
+		for y < limit && inked(img, bounds, y) {
+			y++
+		}
+		bottom := y - 1
+		if bottom-top <= int(float64(height)*footTall) && bottom-bounds.Min.Y <= int(float64(height)*footHigh) {
+			pad := max(2, int(float64(height)*footPad))
+			return image.Rect(bounds.Min.X, max(bounds.Min.Y, top-pad),
+				bounds.Max.X, min(bounds.Max.Y, bottom+pad+1))
+		}
+	}
+
+	// Half as deep again as the foot's, because a head printed on a colour bar
+	// reads as one tall block of ink and the number sits low in it.
+	tall := max(1, int(float64(height)*band*1.5))
+	return image.Rect(bounds.Min.X, bounds.Min.Y, bounds.Max.X, bounds.Min.Y+tall)
 }
 
 // inked says whether a row of the image carries print.

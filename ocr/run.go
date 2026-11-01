@@ -425,8 +425,19 @@ func (r *Runner) attempt(ctx context.Context, job queue.Job, spent *meter) (queu
 	// is the rule it feeds. A band that cannot be read is not the page's fault
 	// and does not kill the job: the page goes on to be judged with no folio
 	// line, which is the honest description of what was read.
+	expect := r.expect(job)
 	if r.Folio != nil && !HasFolioLine(text) {
 		number, printed, err := r.Folio.Read(ctx, image)
+		// The head is read only when the foot did not give the page it should
+		// have, and taken only when it does. That is a second reading of the
+		// page choosing between two readings of the page, and not the manifest
+		// written in: a sheet out of order still fails, because neither band of
+		// it prints the number that sheet was meant to carry.
+		if err == nil && expect.Folio > 0 && !expect.Cover && (!printed || !near(number, expect.Folio)) {
+			if head, ok, herr := r.Folio.ReadHead(ctx, image); herr == nil && ok && near(head, expect.Folio) {
+				number, printed = head, true
+			}
+		}
 		if err != nil {
 			r.log("%s: the folio band did not read: %v", job.Target, err)
 		} else {
@@ -434,7 +445,6 @@ func (r *Runner) attempt(ctx context.Context, job queue.Job, spent *meter) (queu
 		}
 	}
 
-	expect := r.expect(job)
 	if problems := Validate(text, expect, r.Options); len(problems) > 0 {
 		state, err := r.Queue.Fail(job, Reasons(problems))
 		if err != nil {
@@ -530,6 +540,9 @@ func (r *Runner) repair(job queue.Job, problems []Problem) error {
 	_, err := r.Queue.Add(repair)
 	return err
 }
+
+// near is rule 5's slack: within one page either way.
+func near(printed, want int) bool { return printed-want <= 1 && want-printed <= 1 }
 
 func (r *Runner) expect(job queue.Job) Expect {
 	// Off the target for the same reason the write is, so that a rejection names
