@@ -2,6 +2,7 @@ package problems
 
 import (
 	"fmt"
+	"path"
 	"sort"
 	"strings"
 
@@ -13,6 +14,9 @@ type Article struct {
 	Path  string
 	Front corpus.ArticleFront
 	Body  string
+	// Spill marks an article outside the rubric, read only for the problems a
+	// Задачник heading of its issue promised and its own pages did not carry.
+	Spill bool
 }
 
 // Document is one problem ready to be written to
@@ -62,7 +66,7 @@ func Build(articles []Article) Result {
 		if a.Year != b.Year {
 			return a.Year < b.Year
 		}
-		return a.Number < b.Number
+		return issueOrder(a.Number) < issueOrder(b.Number)
 	})
 
 	var res Result
@@ -77,6 +81,9 @@ func Build(articles []Article) Result {
 	carried := map[string]map[corpus.ProblemID]bool{}
 
 	for _, art := range sorted {
+		if art.Spill {
+			continue
+		}
 		kind, ok := KindOf(art.Front.Title)
 		if !ok {
 			// The reader lists run in the same rubric and are neither half of a
@@ -153,6 +160,51 @@ func Build(articles []Article) Result {
 		}
 	}
 
+	// The promised numbers no Задачник page carried, looked for at the head of
+	// the other articles of the issue.
+	for _, art := range sorted {
+		if !art.Spill {
+			continue
+		}
+		missing := map[corpus.ProblemID]Kind{}
+		for id, kind := range claimed[art.Front.Issue] {
+			if !carried[art.Front.Issue][id] {
+				missing[id] = kind
+			}
+		}
+		if len(missing) == 0 {
+			continue
+		}
+		for _, item := range spilled(art, missing) {
+			if carried[art.Front.Issue] == nil {
+				carried[art.Front.Issue] = map[corpus.ProblemID]bool{}
+			}
+			carried[art.Front.Issue][item.ID] = true
+			entry := entries[item.ID]
+			if entry == nil {
+				entry = &Entry{ID: item.ID.String(), Subject: item.ID.Subject, Number: item.ID.Number}
+				entries[item.ID] = entry
+				text[item.ID] = map[Kind]string{}
+			}
+			printing := &Printing{
+				Issue:   art.Front.Issue,
+				Article: art.Path,
+				Pages:   art.Front.PageLabels,
+				Tag:     string(art.Front.Tag),
+				Rubric:  Rubric,
+			}
+			switch {
+			case item.Kind == Posed && entry.Posed == nil:
+				entry.Posed = printing
+				text[item.ID][Posed] = item.Text
+				prov[item.ID] = art.Front.Provenance
+			case item.Kind == Solved && entry.Solved == nil:
+				entry.Solved = printing
+				text[item.ID][Solved] = item.Text
+			}
+		}
+	}
+
 	// What the headings promised and no page of the issue delivered.
 	//
 	// Taken over the issue rather than over the article because the problem the
@@ -161,6 +213,9 @@ func Build(articles []Article) Result {
 	// the words were sitting in the corpus, which made the gap list read like a
 	// reading failure when it was a page boundary.
 	for _, art := range sorted {
+		if art.Spill {
+			continue
+		}
 		kind, ok := KindOf(art.Front.Title)
 		if !ok {
 			continue
@@ -226,6 +281,9 @@ func claims(articles []Article) map[string]map[corpus.ProblemID]Kind {
 	out := map[string]map[corpus.ProblemID]Kind{}
 	conflict := map[string]map[corpus.ProblemID]bool{}
 	for _, art := range articles {
+		if art.Spill {
+			continue
+		}
 		kind, ok := KindOf(art.Front.Title)
 		if !ok {
 			continue
@@ -332,10 +390,12 @@ func document(id corpus.ProblemID, e *Entry, halves map[Kind]string, prov corpus
 	if e.Posed != nil {
 		doc.Front.PosedIn = e.Posed.Issue
 		doc.Front.PosedPages = e.Posed.Pages
+		doc.Front.PosedArticle = path.Base(e.Posed.Article)
 	}
 	if e.Solved != nil {
 		doc.Front.SolvedIn = e.Solved.Issue
 		doc.Front.SolvedPages = e.Solved.Pages
+		doc.Front.SolvedArticle = path.Base(e.Solved.Article)
 	}
 	return doc
 }
@@ -359,4 +419,17 @@ func (d Document) Body() string {
 	}
 	b.WriteString("\n")
 	return b.String()
+}
+
+// issueOrder is the first number of an issue label, so that 11 sorts after 3
+// and a double issue 5-6 sorts where its first half would.
+func issueOrder(number string) int {
+	n := 0
+	for _, r := range number {
+		if r < '0' || r > '9' {
+			break
+		}
+		n = n*10 + int(r-'0')
+	}
+	return n
 }

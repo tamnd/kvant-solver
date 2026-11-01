@@ -336,10 +336,10 @@ func (s *Site) problems(r *Renderer, lang string, ids []corpus.ProblemID) result
 
 		addr := problemURL(lang, id)
 		var chips []link
-		if posed := s.issueChip(lang, addr, t.Posed, front.PosedIn, front.PosedPages); posed != nil {
+		if posed := s.issueChip(lang, addr, t.Posed, front.PosedIn, front.PosedPages, front.PosedArticle); posed != nil {
 			chips = append(chips, *posed)
 		}
-		if solved := s.issueChip(lang, addr, t.Solved, front.SolvedIn, front.SolvedPages); solved != nil {
+		if solved := s.issueChip(lang, addr, t.Solved, front.SolvedIn, front.SolvedPages, front.SolvedArticle); solved != nil {
 			chips = append(chips, *solved)
 		} else {
 			chips = append(chips, link{Text: t.NoSolution})
@@ -375,7 +375,10 @@ func (s *Site) problems(r *Renderer, lang string, ids []corpus.ProblemID) result
 // issue is named either way and only becomes a link when there is something on
 // the other end. Writing the link regardless would leave the site pointing at a
 // directory that is not there, which is exactly what CheckLinks is for.
-func (s *Site) issueChip(lang, from, what, key, pages string) *link {
+//
+// The article the half was cut from is the better target when the site has it,
+// since that is where the words are; the issue is the fallback.
+func (s *Site) issueChip(lang, from, what, key, pages, article string) *link {
 	if key == "" {
 		return nil
 	}
@@ -389,6 +392,14 @@ func (s *Site) issueChip(lang, from, what, key, pages string) *link {
 		text += ", " + t.PageLabel(pages)
 	}
 	chip := &link{Text: text}
+	if article != "" {
+		for _, l := range []string{lang, corpus.DefaultLang} {
+			if addr := articleURL(l, parsed, article); s.known[addr] {
+				chip.Href = href(from, addr)
+				return chip
+			}
+		}
+	}
 	for _, l := range []string{lang, corpus.DefaultLang} {
 		if addr := issueURL(l, parsed); s.known[addr] {
 			chip.Href = href(from, addr)

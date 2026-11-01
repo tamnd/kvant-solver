@@ -56,14 +56,20 @@ func runProblemsBuild(args []string) error {
 	if err != nil {
 		return err
 	}
-	if len(articles) == 0 {
+	zadachnik := 0
+	for _, a := range articles {
+		if !a.Spill {
+			zadachnik++
+		}
+	}
+	if zadachnik == 0 {
 		return fmt.Errorf("no Задачник articles under %s, run kvant assemble first", c.Root)
 	}
 
 	res := problems.Build(articles)
 	counts := res.Manifest.Count()
 	credits := problems.CountCredits(res.Credits)
-	fmt.Printf("%d Задачник articles, %s\n", len(articles), counts)
+	fmt.Printf("%d Задачник articles, %s\n", zadachnik, counts)
 	if credits.Lists > 0 {
 		fmt.Printf("%s\n", credits)
 	}
@@ -170,7 +176,8 @@ func runProblemsList(args []string) error {
 	return nil
 }
 
-// loadProblemArticles reads every Задачник article in the corpus.
+// loadProblemArticles reads every Задачник article in the corpus, and the
+// other articles marked as spill.
 //
 // The rubric is what selects them rather than the title, because the title is
 // checked afterwards to decide which half an article is, and a run that
@@ -207,9 +214,10 @@ func loadProblemArticles(c *corpus.Corpus, lang string) ([]problems.Article, err
 			if err != nil {
 				return nil, err
 			}
-			if front.Rubric != problems.Rubric && !strings.Contains(front.RubricSub, "Задачник") {
-				continue
-			}
+			// The rest of the issue comes along marked, because the last
+			// problems of a spread are often assembled onto the first page of
+			// the article that follows it.
+			spill := front.Rubric != problems.Rubric && !strings.Contains(front.RubricSub, "Задачник")
 			rel, err := filepath.Rel(c.Root, path)
 			if err != nil {
 				rel = path
@@ -218,6 +226,7 @@ func loadProblemArticles(c *corpus.Corpus, lang string) ([]problems.Article, err
 				Path:  filepath.ToSlash(rel),
 				Front: *front,
 				Body:  body,
+				Spill: spill,
 			})
 		}
 	}

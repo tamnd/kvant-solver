@@ -136,7 +136,7 @@ func TestAProblemStandsOnItsNumberAndLinksBothOfItsIssues(t *testing.T) {
 
 	for _, want := range []string{
 		"Задача M301",
-		`href="../../ru/1975/04/"`,
+		`href="../../ru/1975/04/02_zadachi"`,
 		`href="../../ru/1975/10/"`,
 		"41-42", "51-53",
 		"С. Охитин",
@@ -145,6 +145,19 @@ func TestAProblemStandsOnItsNumberAndLinksBothOfItsIssues(t *testing.T) {
 		if !strings.Contains(page, want) {
 			t.Errorf("the problem page has no %s in it", want)
 		}
+	}
+}
+
+// A Задачник article links every problem its heading names that has a page,
+// and only those.
+func TestAZadachnikArticleLinksItsProblems(t *testing.T) {
+	_, out, _ := build(t)
+	page := read(t, out, "ru/1975/04/02_zadachi.html")
+	if !strings.Contains(page, `href="../../../ru/problems/M301"`) {
+		t.Error("the article does not link the problem it posed")
+	}
+	if strings.Contains(page, "problems/M302") {
+		t.Error("the article links a problem that has no page")
 	}
 }
 

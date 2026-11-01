@@ -49,11 +49,20 @@ func build(t *testing.T) (root, out string, stats publish.Stats) {
 		Tag:       "Q7T2",
 	}, "Ещё текст.\n")
 
+	// The Задачник article that posed M301, so the problem page links to the
+	// article and the article to the problem.
+	article(t, root, 1975, "4", "02_zadachi", corpus.ArticleFront{
+		Title:     "Задачи М301—М302",
+		Rubric:    "zadachnik-kvanta",
+		PageFirst: 41,
+		PageLast:  42,
+	}, "М301. Докажите.\n")
+
 	// Posed and solved in issues the site has, so both halves of the meta line
 	// are links.
 	problem(t, root, corpus.ProblemFront{
 		ID: "M301", Subject: corpus.Math, Tag: "0IZG",
-		PosedIn: "kvant_1975_4", PosedPages: "41-42",
+		PosedIn: "kvant_1975_4", PosedPages: "41-42", PosedArticle: "02_zadachi.md",
 		SolvedIn: "kvant_1975_10", SolvedPages: "51-53",
 		HasPublishedSolution: true,
 		Authors:              []string{"С. Охитин"},
@@ -152,8 +161,8 @@ func TestASiteIsBuiltOutOfWhatWasRead(t *testing.T) {
 	if stats.Pages != 5 {
 		t.Errorf("published %d pages, want 5", stats.Pages)
 	}
-	if stats.Articles != 2 {
-		t.Errorf("published %d articles, want 2", stats.Articles)
+	if stats.Articles != 3 {
+		t.Errorf("published %d articles, want 3", stats.Articles)
 	}
 	if stats.Problems != 2 {
 		t.Errorf("published %d problems, want 2", stats.Problems)
