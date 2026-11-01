@@ -25,6 +25,9 @@ async function getManifest(env) {
   const obj = await env.SITE.get("site.json");
   if (!obj) throw new Error("no site.json");
   manifest = await obj.json();
+  // The deploy writes the manifest last, so its upload time is when every page
+  // of this build became what it is, which is the Last-Modified they share.
+  manifest.modified = new Date(Math.floor(obj.uploaded.getTime() / 1000) * 1000);
   manifestAt = Date.now();
   return manifest;
 }
@@ -49,9 +52,31 @@ function cacheControl(key, type) {
   return "public, max-age=3600";
 }
 
+// matches reads an If-None-Match list, weak or strong, the way RFC 9110 says a
+// GET compares validators.
+function matches(header, etag) {
+  if (!header) return false;
+  return header.split(",").some((t) => {
+    t = t.trim();
+    return t === "*" || t.replace(/^W\//, "") === `"${etag}"`;
+  });
+}
+
+// fresh says whether the reader's copy is this one. The edge strips ETag from
+// the HTML it may rewrite, weak or not, so the build time stands in for it
+// there; an ETag that does reach the reader still wins, as RFC 9110 orders it.
+function fresh(request, etag, modified) {
+  const inm = request.headers.get("If-None-Match");
+  if (inm) return matches(inm, etag);
+  const ims = Date.parse(request.headers.get("If-Modified-Since") || "");
+  return !Number.isNaN(ims) && ims >= modified.getTime();
+}
+
 async function serve(request, env, ctx, m, key, entry, status) {
   const [pack, offset, length, type, etag, gz] = entry;
-  const tag = `"${etag}"`;
+  // Weak, because the edge drops a strong validator from any text response it
+  // might compress, and a page that never answers 304 is sent whole every time.
+  const tag = `W/"${etag}"`;
   const headers = new Headers({
     "Content-Type": type,
     "ETag": tag,
@@ -60,9 +85,11 @@ async function serve(request, env, ctx, m, key, entry, status) {
     "Referrer-Policy": "strict-origin-when-cross-origin",
     "Vary": "Accept-Encoding",
   });
-  if (status === 200 && request.headers.get("If-None-Match") === tag) {
+  if (status === 200) headers.set("Last-Modified", m.modified.toUTCString());
+  if (status === 200 && fresh(request, etag, m.modified)) {
     return new Response(null, { status: 304, headers });
   }
+  if (request.method === "HEAD") return new Response(null, { status, headers });
   // The edge cache holds the stored bytes under their hash, so a page is read
   // out of R2 once per location however many readers ask for it.
   const cache = caches.default;
@@ -77,7 +104,6 @@ async function serve(request, env, ctx, m, key, entry, status) {
     body = await obj.arrayBuffer();
     ctx.waitUntil(cache.put(cacheKey, new Response(body, { headers: { "Cache-Control": "public, max-age=604800" } })));
   }
-  if (request.method === "HEAD") return new Response(null, { status, headers });
   if (gz) {
     if ((request.headers.get("Accept-Encoding") || "").includes("gzip")) {
       headers.set("Content-Encoding", "gzip");
