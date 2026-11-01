@@ -51,6 +51,7 @@ func run(args []string) error {
 		{"problems", "problems build|list", "recover the problems and pair them with their printed solutions", runProblems},
 		{"publish", "publish [--out DIR] [--lang ru,en]", "build the static site out of the committed text", runPublish},
 		{"serve", "serve [--dir DIR] [--addr :8080]", "serve a built site the way Cloudflare and GitHub Pages do", runServe},
+		{"deploy", "deploy [--dir DIR] [--bucket NAME]", "pack a built site and upload what changed to R2, for the Worker to serve", runDeploy},
 		{"quantum", "quantum sync|report", "map the English Quantum onto the Kvant it was translated out of", runQuantum},
 		{"repair", "repair [--from Y --to Y]", "read the dead pages through another lane", runRepair},
 		{"solve", "solve --set smoke", "work the problems and mark them against the printed solutions", runSolve},
