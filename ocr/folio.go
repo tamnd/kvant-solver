@@ -227,6 +227,11 @@ func HeadBand(img image.Image, band float64) image.Rectangle {
 	height := bounds.Dy()
 	limit := bounds.Min.Y + int(float64(height)*footLook)
 
+	// Half as deep again as the foot's, because a head printed on a colour bar
+	// reads as one tall block of ink and the number sits low in it.
+	tall := max(1, int(float64(height)*band*1.5))
+	strip := image.Rect(bounds.Min.X, bounds.Min.Y, bounds.Max.X, min(bounds.Max.Y, bounds.Min.Y+tall))
+
 	y := bounds.Min.Y
 	for y < limit && !inked(img, bounds, y) {
 		y++
@@ -239,15 +244,14 @@ func HeadBand(img image.Image, band float64) image.Rectangle {
 		bottom := y - 1
 		if bottom-top <= int(float64(height)*footTall) && bottom-bounds.Min.Y <= int(float64(height)*footHigh) {
 			pad := max(2, int(float64(height)*footPad))
-			return image.Rect(bounds.Min.X, max(bounds.Min.Y, top-pad),
-				bounds.Max.X, min(bounds.Max.Y, bottom+pad+1))
+			// Never less than the strip. Spaced capitals on a pale bar thin
+			// out to a few dark pixels a row across their middle, so the line
+			// found can be the top half of the head, and a half 31 reads 21.
+			return strip.Union(image.Rect(bounds.Min.X, max(bounds.Min.Y, top-pad),
+				bounds.Max.X, min(bounds.Max.Y, bottom+pad+1)))
 		}
 	}
-
-	// Half as deep again as the foot's, because a head printed on a colour bar
-	// reads as one tall block of ink and the number sits low in it.
-	tall := max(1, int(float64(height)*band*1.5))
-	return image.Rect(bounds.Min.X, bounds.Min.Y, bounds.Max.X, bounds.Min.Y+tall)
+	return strip
 }
 
 // inked says whether a row of the image carries print.
